@@ -75,8 +75,11 @@ const char *sles_symbols[] = {
     "slCreateEngine",
     "SL_IID_ENGINE",
     "SL_IID_BUFFERQUEUE",
+    "SL_IID_ANDROIDSIMPLEBUFFERQUEUE",
+    "SL_IID_ANDROIDCONFIGURATION",
     "SL_IID_VOLUME",
     "SL_IID_PLAY",
+    "SL_IID_RECORD",
     0
 };
 
@@ -156,6 +159,8 @@ const char *fmod_symbols[] = {
     "_ZN4FMOD12ChannelGroup8addGroupEPS0_bPPNS_13DSPConnectionE",
     "_ZN4FMOD6System23set3DListenerAttributesEiPK11FMOD_VECTORS3_S3_S3_",
     "_ZN4FMOD6System6updateEv",
+    "_ZN4FMOD6System12mixerSuspendEv",
+    "_ZN4FMOD6System11mixerResumeEv",
     "_ZN4FMOD6System12createStreamEPKcjP22FMOD_CREATESOUNDEXINFOPPNS_5SoundE",
     "_ZN4FMOD6System11createSoundEPKcjP22FMOD_CREATESOUNDEXINFOPPNS_5SoundE",
     "_ZN4FMOD5Sound19set3DMinMaxDistanceEff",

@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <ninecraft/android/android_alloc.h>
+#include <ninecraft/android/guest_call.h>
 #include <ninecraft/version_ids.h>
 #include <ninecraft/audio/sound_repository.h>
 #include <ninecraft/audio/audio_engine.h>
@@ -12,6 +13,9 @@
 #include <ninecraft/gfx/gles_compat.h>
 #include <SDL.h>
 #ifdef _WIN32
+#include <windows.h>
+#include <commdlg.h>
+#include <SDL_syswm.h>
 #include <direct.h>
 #include <io.h>
 #include <ninecraft/device_identity.h>
@@ -1600,25 +1604,216 @@ bool AppPlatform_linux$isTablet(AppPlatform_linux *app_platform) {
     return false;
 }
 
-void AppPlatform_linux$pickImage(AppPlatform_linux *__this, image_picking_callback_0_11_0_t *callback) {
-    android_string_t path;
-    FILE *fp = popen("zenity --file-selection", "r");
-    if (fp) {
-        char input_value[256];
-        for (int i = 0; i < 100; ++i) {
-            char c = fgetc(fp);
-            if (c == '\n' || c == '\0' || c == EOF) {
-                input_value[i] = '\0';
-                break;
-            }
-            input_value[i] = c;
+#ifdef _WIN32
+static HWND ninecraft_get_sdl_window_handle(void) {
+    SDL_SysWMinfo window_info;
+
+    if (!_window) {
+        return NULL;
+    }
+    memset(&window_info, 0, sizeof(window_info));
+    SDL_VERSION(&window_info.version);
+    if (SDL_GetWindowWMInfo(_window, &window_info) != SDL_TRUE ||
+        window_info.subsystem != SDL_SYSWM_WINDOWS) {
+        return NULL;
+    }
+    return window_info.info.win.window;
+}
+
+static bool ninecraft_windows_path_to_ansi(
+    const wchar_t *wide_path,
+    char *path,
+    size_t path_size) {
+    BOOL used_default_character = FALSE;
+    UINT code_page = GetACP();
+    DWORD conversion_flags =
+        code_page == CP_UTF8 ? 0 : WC_NO_BEST_FIT_CHARS;
+    BOOL *used_default_character_out =
+        code_page == CP_UTF8 ? NULL : &used_default_character;
+    int converted;
+
+    if (!wide_path || !path || path_size == 0 || path_size > INT_MAX) {
+        return false;
+    }
+    converted = WideCharToMultiByte(
+        code_page,
+        conversion_flags,
+        wide_path,
+        -1,
+        path,
+        (int)path_size,
+        NULL,
+        used_default_character_out);
+    if (converted > 0 &&
+        (!used_default_character_out || !used_default_character)) {
+        return true;
+    }
+
+    /* The image loader currently opens narrow paths.  If a selected name is
+     * outside the active Windows code page, use its XP-compatible 8.3 path. */
+    {
+        wchar_t short_path[MAX_PATH];
+        DWORD short_length = GetShortPathNameW(
+            wide_path, short_path, MAX_PATH);
+        if (short_length == 0 || short_length >= MAX_PATH) {
+            return false;
         }
-        input_value[255] = '\0';
-        android_string_cstr(&path, input_value);
-        pclose(fp);
-        callback->vtable->onImagePickingSuccess(callback, &path);
-    } else {
-        callback->vtable->onImagePickingCanceled(callback);
+        used_default_character = FALSE;
+        converted = WideCharToMultiByte(
+            code_page,
+            conversion_flags,
+            short_path,
+            -1,
+            path,
+            (int)path_size,
+            NULL,
+            used_default_character_out);
+    }
+    return converted > 0 &&
+           (!used_default_character_out || !used_default_character);
+}
+
+static bool ninecraft_pick_image_windows(char *path, size_t path_size) {
+    OPENFILENAMEW dialog;
+    wchar_t wide_path[MAX_PATH];
+    SDL_bool window_was_grabbed = SDL_FALSE;
+    SDL_bool relative_mouse_was_enabled = SDL_FALSE;
+    int cursor_was_visible = SDL_ENABLE;
+    BOOL selected;
+    DWORD dialog_error = 0;
+
+    memset(&dialog, 0, sizeof(dialog));
+    memset(wide_path, 0, sizeof(wide_path));
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = ninecraft_get_sdl_window_handle();
+    dialog.lpstrFilter =
+        L"PNG images (*.png)\0*.png\0All files (*.*)\0*.*\0";
+    dialog.lpstrFile = wide_path;
+    dialog.nMaxFile = MAX_PATH;
+    dialog.lpstrTitle = L"Select a Minecraft skin";
+    dialog.lpstrDefExt = L"png";
+    dialog.nFilterIndex = 1;
+    dialog.Flags = OFN_EXPLORER |
+                   OFN_FILEMUSTEXIST |
+                   OFN_PATHMUSTEXIST |
+                   OFN_HIDEREADONLY |
+                   OFN_NOCHANGEDIR;
+
+    if (_window) {
+        window_was_grabbed = SDL_GetWindowGrab(_window);
+        relative_mouse_was_enabled = SDL_GetRelativeMouseMode();
+        cursor_was_visible = SDL_ShowCursor(SDL_QUERY);
+        if (relative_mouse_was_enabled) {
+            SDL_SetRelativeMouseMode(SDL_FALSE);
+        }
+        if (window_was_grabbed) {
+            SDL_SetWindowGrab(_window, SDL_FALSE);
+        }
+        SDL_ShowCursor(SDL_ENABLE);
+    }
+
+    selected = GetOpenFileNameW(&dialog);
+    if (!selected) {
+        dialog_error = CommDlgExtendedError();
+    }
+
+    if (_window) {
+        if (cursor_was_visible == SDL_DISABLE) {
+            SDL_ShowCursor(SDL_DISABLE);
+        }
+        if (window_was_grabbed) {
+            SDL_SetWindowGrab(_window, SDL_TRUE);
+        }
+        if (relative_mouse_was_enabled) {
+            SDL_SetRelativeMouseMode(SDL_TRUE);
+        }
+        SDL_RaiseWindow(_window);
+    }
+
+    if (!selected) {
+        if (dialog_error != 0) {
+            fprintf(
+                stderr,
+                "GetOpenFileNameW failed with error 0x%08lx\n",
+                (unsigned long)dialog_error);
+        }
+        return false;
+    }
+    if (!ninecraft_windows_path_to_ansi(
+            wide_path, path, path_size)) {
+        fprintf(
+            stderr,
+            "Unable to represent the selected skin path in the Windows "
+            "system code page.\n");
+        return false;
+    }
+    return true;
+}
+#endif
+
+static void ninecraft_image_picking_success(
+    image_picking_callback_0_11_0_t *callback,
+    android_string_t *path) {
+#if defined(_WIN32) && (defined(__i386__) || defined(_M_IX86))
+    ninecraft_call_guest(
+        (void *)callback->vtable->onImagePickingSuccess,
+        2,
+        (uintptr_t)callback,
+        (uintptr_t)path);
+#else
+    callback->vtable->onImagePickingSuccess(callback, path);
+#endif
+}
+
+static void ninecraft_image_picking_canceled(
+    image_picking_callback_0_11_0_t *callback) {
+#if defined(_WIN32) && (defined(__i386__) || defined(_M_IX86))
+    ninecraft_call_guest(
+        (void *)callback->vtable->onImagePickingCanceled,
+        1,
+        (uintptr_t)callback);
+#else
+    callback->vtable->onImagePickingCanceled(callback);
+#endif
+}
+
+void AppPlatform_linux$pickImage(AppPlatform_linux *__this, image_picking_callback_0_11_0_t *callback) {
+    char selected_path[4096];
+    bool selected = false;
+
+    (void)__this;
+    if (!callback || !callback->vtable) {
+        return;
+    }
+    selected_path[0] = '\0';
+
+#ifdef _WIN32
+    selected = ninecraft_pick_image_windows(
+        selected_path, sizeof(selected_path));
+#else
+    {
+        FILE *fp = popen("zenity --file-selection", "r");
+        if (fp) {
+            if (fgets(selected_path, sizeof(selected_path), fp)) {
+                size_t length = strlen(selected_path);
+                while (length > 0 &&
+                       (selected_path[length - 1] == '\n' ||
+                        selected_path[length - 1] == '\r')) {
+                    selected_path[--length] = '\0';
+                }
+            }
+            selected = pclose(fp) == 0 && selected_path[0] != '\0';
+        }
+    }
+#endif
+
+    if (selected && callback->vtable->onImagePickingSuccess) {
+        android_string_t path;
+        android_string_cstr(&path, selected_path);
+        ninecraft_image_picking_success(callback, &path);
+        android_string_destroy(&path);
+    } else if (callback->vtable->onImagePickingCanceled) {
+        ninecraft_image_picking_canceled(callback);
     }
 }
 

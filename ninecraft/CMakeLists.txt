@@ -9,7 +9,7 @@ target_include_directories(ninecraft PRIVATE include/)
 target_link_libraries(ninecraft PRIVATE ${CMAKE_DL_LIBS} zlibstatic SDL2::SDL2 SDL2main glad ancmp)
 
 if(WIN32)
-    target_link_libraries(ninecraft PRIVATE iphlpapi)
+    target_link_libraries(ninecraft PRIVATE iphlpapi comdlg32)
     set_target_properties(ninecraft PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 

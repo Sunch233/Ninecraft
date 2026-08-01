@@ -39,6 +39,7 @@
 #include <wctype.h>
 #include <ninecraft/audio/sles.h>
 #include <ninecraft/audio/audio_engine.h>
+#include <ninecraft/audio/fmod_compat.h>
 #include <zlib.h>
 #include <ancmp/android_stat.h>
 #include <ancmp/android_io.h>
@@ -200,13 +201,8 @@ void egl_stub() {
     // puts("warn: egl call");
 }
 
-/*
- * FMOD's Android AudioTrack backend requires the Java-side org.fmod bridge.
- * MCPE treats a failed FMOD_System_Create as "sound unavailable" and keeps
- * running, so use that supported failure path until a complete Java bridge is
- * available.  The real libfmod is still loaded first to satisfy every other
- * FMOD relocation in libminecraftpe.
- */
+/* Safe fallback when the FMOD/OpenSL compatibility bridge cannot be installed.
+ * MCPE treats this result as "sound unavailable" and continues running. */
 static int ninecraft_fmod_system_create_disabled(void **system) {
     (void)system;
     return 1;
@@ -1685,6 +1681,7 @@ int main(int argc, char **argv) {
     SDL_GLContext gl_context;
     size_t ninecraft_app_size = 0, minecraft_isgrabbed_offset = 0;
     bool running = true;
+    bool sles_ready = false;
     SDL_Event event;
     char *minecraft_options;
     void *icon_pixels;
@@ -1892,7 +1889,14 @@ int main(int argc, char **argv) {
     add_custom_hook("SL_IID_VOLUME", &sles_iid_volume);
     add_custom_hook("SL_IID_ENGINE", &sles_iid_engine);
     add_custom_hook("SL_IID_BUFFERQUEUE", &sles_iid_bufferqueue);
+    add_custom_hook(
+        "SL_IID_ANDROIDSIMPLEBUFFERQUEUE",
+        &sles_iid_androidsimplebufferqueue);
+    add_custom_hook(
+        "SL_IID_ANDROIDCONFIGURATION",
+        &sles_iid_androidconfiguration);
     add_custom_hook("SL_IID_PLAY", &sles_iid_play);
+    add_custom_hook("SL_IID_RECORD", &sles_iid_record);
     add_custom_hook("slCreateEngine", sles_create_engine);
 
     so_liblog = android_library_create("liblog.so");
@@ -1901,6 +1905,12 @@ int main(int argc, char **argv) {
     so_libegl = android_library_create("libEGL.so");
     so_libandroid = android_library_create("libandroid.so");
     so_libopensles = android_library_create("libOpenSLES.so");
+    sles_ready = sles_register_library_symbols(so_libopensles);
+    if (!sles_ready) {
+        fputs(
+            "OpenSL compatibility: unable to register dynamic symbols\n",
+            stderr);
+    }
     so_libz = android_library_create("libz.so");
 
 #ifdef _WIN32
@@ -1908,7 +1918,11 @@ int main(int argc, char **argv) {
 #endif
     so_libgnustl_shared = load_library("libgnustl_shared.so", false);
     so_libfmod = load_library("libfmod.so", false);
-    add_custom_hook("FMOD_System_Create", (void *)ninecraft_fmod_system_create_disabled);
+    if (!sles_ready || !ninecraft_fmod_install(so_libfmod)) {
+        add_custom_hook(
+            "FMOD_System_Create",
+            (void *)ninecraft_fmod_system_create_disabled);
+    }
     handle = load_library("libminecraftpe.so", true);
 
     if (!handle) {
@@ -2488,6 +2502,7 @@ int main(int argc, char **argv) {
         mod_loader_execute_on_minecraft_update(ninecraft_app, version_id);
 
         audio_engine_tick();
+        sles_tick();
         SDL_GL_SwapWindow(_window);
 
         if (version_id == version_id_0_14_3 && !is_keyboard_visible) {
