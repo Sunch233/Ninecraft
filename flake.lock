@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "ancmp": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1756362434,
-        "narHash": "sha256-uldMv32+ZpokeeSEIJ+IhV7Rg5xzt0Huh32TIYy4N/g=",
-        "owner": "MFDGaming",
-        "repo": "ancmp",
-        "rev": "f4b297220b271460faf80f82082cfe782d7ee76c",
-        "type": "github"
-      },
-      "original": {
-        "owner": "MFDGaming",
-        "repo": "ancmp",
-        "type": "github"
-      }
-    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -108,7 +92,6 @@
     },
     "root": {
       "inputs": {
-        "ancmp": "ancmp",
         "flake-utils": "flake-utils",
         "glad": "glad",
         "ninecraft-mod-toolchain-build-scripts": "ninecraft-mod-toolchain-build-scripts",

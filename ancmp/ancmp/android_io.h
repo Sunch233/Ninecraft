@@ -2,10 +2,10 @@
 #define ANCMP_ANDROID_IO_H
 
 #include <sys/types.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <wchar.h>
 #include <wctype.h>
+#include "ancmp_stdint.h"
 #include "wchar/android_wchar.h"
 
 typedef off_t android_fpos_t;

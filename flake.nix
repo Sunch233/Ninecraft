@@ -13,10 +13,6 @@
       flake = false;
       url = "github:Dav1dde/glad/56e406e90a802e963bb18d9c94cf6589e5a6b0a9";
     };
-    ancmp = {
-      flake = false;
-      url = "github:MFDGaming/ancmp";
-    };
     stb = {
       flake = false;
       url = "github:nothings/stb/5736b15f7ea0ffb08dd38af21067c314d6a3aae9";
@@ -33,7 +29,6 @@
     flake-utils,
     nixgl,
     glad,
-    ancmp,
     stb,
     ninecraft-mod-toolchain-build-scripts,
   }: let
@@ -54,8 +49,7 @@
         (import ./nix/pkgs {
           inherit pkgs;
           flakeRoot = self;
-          # inherit glad stb ancmp ninecraft-mod-toolchain-build-scripts;
-          # ancmp = ./ancmp;
+          # inherit glad stb ninecraft-mod-toolchain-build-scripts;
         })
         // {
           default = packages.buildNinecraftInstance {

@@ -20,13 +20,6 @@
     rev = "56e406e90a802e963bb18d9c94cf6589e5a6b0a9";
     hash = lib.getHash name;
   }),
-  ancmp ? (pkgs.fetchFromGitHub rec {
-    name = "ancmp";
-    owner = "MFDGaming";
-    repo = name;
-    rev = "main";
-    hash = lib.getHash name;
-  }),
   stb ? (pkgs.fetchFromGitHub rec {
     name = "stb";
     owner = "nothings";
@@ -52,7 +45,7 @@
     inherit ninecraft-extract mcpeVersions;
   };
   ninecraft = pkgs.pkgsi686Linux.callPackage ./ninecraft.nix {
-    inherit glad stb ancmp ninecraft-extract makeNinecraftDesktopItems mcpeVersions;
+    inherit glad stb ninecraft-extract makeNinecraftDesktopItems mcpeVersions;
   };
 
   buildNinecraftInstance = pkgs.callPackage ./buildNinecraftInstance.nix {

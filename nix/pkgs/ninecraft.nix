@@ -1,5 +1,4 @@
 {
-  ancmp,
   bash,
   cmake,
   copyDesktopItems,
@@ -40,13 +39,11 @@ stdenv.mkDerivation rec {
   prePhases = "submoduleFetchPhase";
   submoduleFetchPhase = ''
     export glad=$PWD/deps_src/glad
-          export ancmp=$PWD/deps_src/ancmp
-          export stb=$PWD/deps_src/stb
-        mkdir -p deps_src
-        cp --no-preserve=mode,ownership -r ${glad} $glad
-        cp --no-preserve=mode,ownership -r ${ancmp} $ancmp
-        cp --no-preserve=mode,ownership -r ${stb} $stb
-        ls -al deps_src
+    export stb=$PWD/deps_src/stb
+    mkdir -p deps_src
+    cp --no-preserve=mode,ownership -r ${glad} $glad
+    cp --no-preserve=mode,ownership -r ${stb} $stb
+    ls -al deps_src
   '';
 
   installPhase = ''

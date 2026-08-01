@@ -51,12 +51,16 @@ custom_file_t *android_fopen(const char *filename, const char *mode) {
     FILE *file;
 
 #ifdef _WIN32
-    if (filename && mode && mode[0] == 'r' &&
+    if (filename &&
         (strcmp(filename, "/dev/urandom") == 0 ||
          strcmp(filename, "/dev/random") == 0)) {
         HCRYPTPROV provider = 0;
         custom_file_t *cfile;
 
+        if (!mode || (strcmp(mode, "r") != 0 && strcmp(mode, "rb") != 0)) {
+            errno = EINVAL;
+            return NULL;
+        }
         cfile = (custom_file_t *)calloc(1, sizeof(custom_file_t));
         if (!cfile) {
             errno = ENOMEM;
