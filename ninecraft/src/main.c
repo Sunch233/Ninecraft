@@ -1681,6 +1681,9 @@ static bool detect_version() {
             found = false;
         }
     }
+	
+	printf("This Ninercraft build is not an official build! it is a modified version by Sunch233.\n");
+	printf("This software is distributed free of charge. If you paid for it, you have been scammed.\n");
 
     android_string_destroy(&in);
 
@@ -1825,7 +1828,7 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     _window = SDL_CreateWindow(
-        "Ninecraft",
+        "Ninecraft 0.14.3 By Sunch233",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         720, 480,
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
@@ -1924,11 +1927,10 @@ int main(int argc, char **argv) {
     if (version_id == version_id_0_14_3) {
         if (!ninecraft_device_identity_initialize()) {
             fputs(
-                "Unable to derive a stable device CID; MCPE initialization was blocked.\n",
+                "Unable to derive a stable device CID.\n",
                 stderr);
             return 1;
         }
-        puts("Device CID source: network adapter MAC address");
     }
 #endif
 
