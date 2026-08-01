@@ -16,6 +16,10 @@ void gl_blend_func(GLenum sfactor, GLenum dfactor) {
     glBlendFunc(sfactor, dfactor);
 }
 
+void gl_blend_func_separate(GLenum src_rgb, GLenum dst_rgb, GLenum src_alpha, GLenum dst_alpha) {
+    glBlendFuncSeparate(src_rgb, dst_rgb, src_alpha, dst_alpha);
+}
+
 void gl_buffer_data(GLenum target, GLsizeiptr size, const void *data, GLenum usage) {
     glBufferData(target, size, data, usage);
 }
@@ -382,4 +386,64 @@ void gl_uniform_1_i(GLint location, GLint v0) {
 
 void gl_buffer_sub_data(GLenum target, GLintptr offset, GLsizeiptr size, const void *data) {
     glBufferSubData(target, offset, size, data);
+}
+
+void gl_bind_renderbuffer(GLenum target, GLuint renderbuffer) {
+    glBindRenderbuffer(target, renderbuffer);
+}
+
+void gl_gen_renderbuffers(GLsizei n, GLuint *renderbuffers) {
+    glGenRenderbuffers(n, renderbuffers);
+}
+
+void gl_delete_renderbuffers(GLsizei n, const GLuint *renderbuffers) {
+    glDeleteRenderbuffers(n, renderbuffers);
+}
+
+void gl_bind_framebuffer(GLenum target, GLuint framebuffer) {
+    glBindFramebuffer(target, framebuffer);
+}
+
+GLenum gl_check_framebuffer_status(GLenum target) {
+    return glCheckFramebufferStatus(target);
+}
+
+void gl_gen_framebuffers(GLsizei n, GLuint *framebuffers) {
+    glGenFramebuffers(n, framebuffers);
+}
+
+void gl_delete_framebuffers(GLsizei n, const GLuint *framebuffers) {
+    glDeleteFramebuffers(n, framebuffers);
+}
+
+void gl_get_integer_v(GLenum pname, GLint *data) {
+    glGetIntegerv(pname, data);
+}
+
+FLOAT_ABI_FIX void gl_clear_depth_f(GLclampf depth) {
+    glClearDepth((GLdouble)depth);
+}
+
+void gl_framebuffer_renderbuffer(GLenum target, GLenum attachment, GLenum renderbuffer_target, GLuint renderbuffer) {
+    glFramebufferRenderbuffer(target, attachment, renderbuffer_target, renderbuffer);
+}
+
+void gl_renderbuffer_storage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height) {
+    glRenderbufferStorage(target, internalformat, width, height);
+}
+
+void gl_flush(void) {
+    glFlush();
+}
+
+GLboolean gl_is_texture(GLuint texture) {
+    return glIsTexture(texture);
+}
+
+void gl_get_tex_parameter_i_v(GLenum target, GLenum pname, GLint *params) {
+    glGetTexParameteriv(target, pname, params);
+}
+
+void gl_framebuffer_texture_2_d(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {
+    glFramebufferTexture2D(target, attachment, textarget, texture, level);
 }

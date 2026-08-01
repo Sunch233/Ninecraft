@@ -204,6 +204,51 @@ typedef struct {
     void (*unregisterUriListener)(void *__this, void *uri_listener);
 } app_platform_vtable_0_11_0_t;
 
+/* MCPE 0.14.3 AppPlatform has 85 virtual methods after the RTTI prefix.
+ * Keep this table untyped: the exact slot mapping is documented by the enum
+ * below and only compatible callbacks are replaced. */
+typedef struct {
+    void *slots[85];
+} app_platform_vtable_0_14_3_t;
+
+enum {
+    APP_PLATFORM_0_14_3_GET_DATA_URL = 2,
+    APP_PLATFORM_0_14_3_GET_IMAGE_PATH = 4,
+    APP_PLATFORM_0_14_3_SHOW_KEYBOARD = 9,
+    APP_PLATFORM_0_14_3_HIDE_KEYBOARD = 10,
+    APP_PLATFORM_0_14_3_HIDE_MOUSE_POINTER = 12,
+    APP_PLATFORM_0_14_3_SHOW_MOUSE_POINTER = 13,
+    APP_PLATFORM_0_14_3_SWAP_BUFFERS = 17,
+    APP_PLATFORM_0_14_3_GET_SYSTEM_REGION = 19,
+    APP_PLATFORM_0_14_3_GET_GRAPHICS_VENDOR = 20,
+    APP_PLATFORM_0_14_3_GET_GRAPHICS_RENDERER = 21,
+    APP_PLATFORM_0_14_3_GET_GRAPHICS_VERSION = 22,
+    APP_PLATFORM_0_14_3_GET_GRAPHICS_EXTENSIONS = 23,
+    APP_PLATFORM_0_14_3_PICK_IMAGE = 24,
+    APP_PLATFORM_0_14_3_GET_EXTERNAL_STORAGE_PATH = 28,
+    APP_PLATFORM_0_14_3_GET_INTERNAL_STORAGE_PATH = 29,
+    APP_PLATFORM_0_14_3_GET_USERDATA_PATH = 30,
+    APP_PLATFORM_0_14_3_GET_SCREEN_WIDTH = 37,
+    APP_PLATFORM_0_14_3_GET_SCREEN_HEIGHT = 38,
+    APP_PLATFORM_0_14_3_GET_PIXELS_PER_MILLIMETER = 40,
+    APP_PLATFORM_0_14_3_UPDATE_TEXT_BOX_TEXT = 41,
+    APP_PLATFORM_0_14_3_IS_KEYBOARD_VISIBLE = 42,
+    APP_PLATFORM_0_14_3_SUPPORTS_VIBRATION = 43,
+    APP_PLATFORM_0_14_3_VIBRATE = 44,
+    APP_PLATFORM_0_14_3_READ_ASSET_FILE = 46,
+    APP_PLATFORM_0_14_3_GET_APPLICATION_ID = 64,
+    APP_PLATFORM_0_14_3_GET_AVAILABLE_MEMORY = 65,
+    APP_PLATFORM_0_14_3_GET_BROADCAST_ADDRESSES = 67,
+    APP_PLATFORM_0_14_3_GET_MODEL_NAME = 68,
+    APP_PLATFORM_0_14_3_GET_DEVICE_ID = 69,
+    APP_PLATFORM_0_14_3_CREATE_UUID = 70,
+    APP_PLATFORM_0_14_3_IS_FIRST_SNOOP_LAUNCH = 71,
+    APP_PLATFORM_0_14_3_HAS_HARDWARE_INFORMATION_CHANGED = 72,
+    APP_PLATFORM_0_14_3_IS_TABLET = 73,
+    APP_PLATFORM_0_14_3_GET_PLATFORM_TEMP_PATH = 84,
+};
+
 extern app_platform_vtable_0_9_0_t platform_vtable_0_9_0;
 extern app_platform_vtable_0_10_0_t platform_vtable_0_10_0;
 extern app_platform_vtable_0_11_0_t platform_vtable_0_11_0;
+extern app_platform_vtable_0_14_3_t platform_vtable_0_14_3;

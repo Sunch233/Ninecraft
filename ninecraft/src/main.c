@@ -9,6 +9,9 @@
 #include <sys/mman.h>
 #else
 #include <direct.h>
+#include <io.h>
+#include <sys/utime.h>
+#include <windows.h>
 #define mkdir(x, y) _mkdir(x)
 #endif
 #include <sys/types.h>
@@ -20,6 +23,7 @@
 #include <ninecraft/input/minecraft_keys.h>
 #include <ninecraft/android/android_string.h>
 #include <ninecraft/android/android_alloc.h>
+#include <ninecraft/android/guest_call.h>
 #include <ninecraft/symbols.h>
 #include <ninecraft/AppPlatform_linux.h>
 #include <ninecraft/minecraft.h>
@@ -36,6 +40,7 @@
 #include <ninecraft/audio/audio_engine.h>
 #include <zlib.h>
 #include <ancmp/android_stat.h>
+#include <ancmp/android_io.h>
 
 #include <ancmp/hooks.h>
 #include <ancmp/android_dlfcn.h>
@@ -66,9 +71,68 @@ static unsigned char *controller_states;
 static float *controller_x_stick;
 static float *controller_y_stick;
 
+typedef void (*mouse_feed_0_14_3_t)(char button, char state, short x, short y, short dx, short dy);
+typedef int (*convert_android_key_0_14_3_t)(int key);
+typedef void (*keyboard_feed_text_0_14_3_t)(const android_string_t *text, bool replace_last);
+
+static mouse_feed_0_14_3_t mouse_feed_0_14_3;
+static convert_android_key_0_14_3_t convert_android_key_0_14_3;
+static keyboard_feed_text_0_14_3_t keyboard_feed_text_0_14_3;
+
+static void call_mouse_feed_0_14_3(char button, char state, short x, short y, short dx, short dy) {
+#ifdef _WIN32
+    ninecraft_call_guest(
+        (void *)mouse_feed_0_14_3,
+        6,
+        (uintptr_t)(unsigned char)button,
+        (uintptr_t)(unsigned char)state,
+        (uintptr_t)(unsigned short)x,
+        (uintptr_t)(unsigned short)y,
+        (uintptr_t)(unsigned short)dx,
+        (uintptr_t)(unsigned short)dy);
+#else
+    mouse_feed_0_14_3(button, state, x, y, dx, dy);
+#endif
+}
+
+static int call_convert_android_key_0_14_3(int key) {
+#ifdef _WIN32
+    return (int)ninecraft_call_guest((void *)convert_android_key_0_14_3, 1, (uintptr_t)key);
+#else
+    return convert_android_key_0_14_3(key);
+#endif
+}
+
+static void call_keyboard_feed_text_0_14_3(const android_string_t *text, bool replace_last) {
+#ifdef _WIN32
+    ninecraft_call_guest(
+        (void *)keyboard_feed_text_0_14_3,
+        2,
+        (uintptr_t)text,
+        (uintptr_t)(replace_last ? 1 : 0));
+#else
+    keyboard_feed_text_0_14_3(text, replace_last);
+#endif
+}
+
 bool mouse_pointer_hidden = false;
 
-void *load_library(const char *name) {
+#ifdef _WIN32
+static LONG WINAPI ninecraft_exception_filter(EXCEPTION_POINTERS *exception) {
+    void *address = exception->ExceptionRecord->ExceptionAddress;
+    android_Dl_info info;
+    fprintf(stderr, "Unhandled exception 0x%08lx at %p\n",
+            exception->ExceptionRecord->ExceptionCode, address);
+    if (android_dladdr(address, &info) && info.dli_fbase) {
+        fprintf(stderr, "ELF address: %s+0x%lx\n",
+                info.dli_fname ? info.dli_fname : "<unknown>",
+                (unsigned long)((uintptr_t)address - (uintptr_t)info.dli_fbase));
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
+void *load_library(const char *name, bool show_error) {
 #if defined(__i386__) || defined(_M_IX86)
     char *arch = "x86";
 #else
@@ -88,7 +152,10 @@ void *load_library(const char *name) {
 
     void *handle = android_dlopen(fullpath, ANDROID_RTLD_LAZY);
     if (handle == NULL) {
-        printf("failed to load library %s: %s\n", fullpath, android_dlerror());
+        if (show_error) {
+            printf("failed to load library %s: %s\n", fullpath, android_dlerror());
+        }
+        free(fullpath);
         return NULL;
     }
     printf("lib: %s: : %p\n", fullpath, handle);
@@ -125,6 +192,18 @@ void egl_stub() {
     // puts("warn: egl call");
 }
 
+/*
+ * FMOD's Android AudioTrack backend requires the Java-side org.fmod bridge.
+ * MCPE treats a failed FMOD_System_Create as "sound unavailable" and keeps
+ * running, so use that supported failure path until a complete Java bridge is
+ * available.  The real libfmod is still loaded first to satisfy every other
+ * FMOD relocation in libminecraftpe.
+ */
+static int ninecraft_fmod_system_create_disabled(void **system) {
+    (void)system;
+    return 1;
+}
+
 int mouseToGameKeyCode(int keyCode) {
     if (keyCode == SDL_BUTTON_LEFT) {
         return MCKEY_DESTROY;
@@ -135,10 +214,21 @@ int mouseToGameKeyCode(int keyCode) {
 }
 
 static void mouse_click_callback(struct SDL_Window *window, int button, int action, int x, int y) {
+    if (version_id == version_id_0_14_3) {
+        int mc_button = button == SDL_BUTTON_LEFT ? 1 :
+                        button == SDL_BUTTON_RIGHT ? 2 :
+                        button == SDL_BUTTON_MIDDLE ? 3 : 0;
+        if (mouse_feed_0_14_3 && mc_button) {
+            call_mouse_feed_0_14_3((char)mc_button,
+                                   (char)(action == SDL_PRESSED ? 1 : 0),
+                                   (short)x, (short)y, 0, 0);
+        }
+        return;
+    }
     if (!mouse_pointer_hidden) {
         int mc_button = (button == SDL_BUTTON_LEFT ? 1 : (button == SDL_BUTTON_RIGHT ? 2 : 0));
         if (version_id == version_id_0_1_0) {
-            ((void (*)(int, int, int, int))android_dlsym(handle, "_ZN5Mouse4feedEiiii"))((int)mc_button, (int)(action == SDL_PRESSED ? 1 : 0), (int)x, (int)y0);
+            ((void (*)(int, int, int, int))android_dlsym(handle, "_ZN5Mouse4feedEiiii"))((int)mc_button, (int)(action == SDL_PRESSED ? 1 : 0), (int)x, (int)y);
         } else if (version_id >= version_id_0_6_0) {
             mouse_device_feed_0_6(android_dlsym(handle, "_ZN5Mouse9_instanceE"), (char)mc_button, (char)(action == SDL_PRESSED ? 1 : 0), (short)x, (short)y, 0, 0);
             multitouch_feed_0_6((char)mc_button, (char)(action == SDL_PRESSED ? 1 : 0), (short)x, (short)y, 0);
@@ -162,7 +252,23 @@ static void mouse_click_callback(struct SDL_Window *window, int button, int acti
 
 static void mouse_scroll_callback(struct SDL_Window *window, float xoffset, float yoffset, int direction) {
     char key_code = 0;
-    float offset = (direction == SDL_MOUSEWHEEL_NORMAL) ? yoffset : xoffset;
+    float offset = direction == SDL_MOUSEWHEEL_FLIPPED ? -yoffset : yoffset;
+
+    if (version_id == version_id_0_14_3) {
+        int x;
+        int y;
+        int amount = (int)roundf(offset * 127.0f);
+        if (amount > 127) {
+            amount = 127;
+        } else if (amount < -128) {
+            amount = -128;
+        }
+        SDL_GetMouseState(&x, &y);
+        if (mouse_feed_0_14_3 && amount) {
+            call_mouse_feed_0_14_3(4, (char)amount, (short)x, (short)y, 0, 0);
+        }
+        return;
+    }
 
     if (offset > 0) {
         key_code = MCKEY_MENU_PREVIOUS;
@@ -174,6 +280,17 @@ static void mouse_scroll_callback(struct SDL_Window *window, float xoffset, floa
 }
 
 static void mouse_pos_callback(struct SDL_Window *window, int xpos, int ypos, int xrel, int yrel) {
+    if (version_id == version_id_0_14_3) {
+        if (mouse_feed_0_14_3) {
+            /* MouseMapper treats non-zero deltas as camera input and does not
+             * update the UI pointer.  Menus need absolute pointer events;
+             * captured gameplay needs relative motion. */
+            short dx = mouse_pointer_hidden ? (short)xrel : 0;
+            short dy = mouse_pointer_hidden ? (short)yrel : 0;
+            call_mouse_feed_0_14_3(0, 0, (short)xpos, (short)ypos, dx, dy);
+        }
+        return;
+    }
     if (!mouse_pointer_hidden || version_id >= version_id_0_6_0) {
         if (version_id == version_id_0_1_0) {
             ((void (*)(int, int, int, int))android_dlsym(handle, "_ZN5Mouse4feedEiiii"))(0, 0, (int)xpos, (int)ypos);
@@ -633,7 +750,37 @@ float calculate_scale(int width, int height, float dpi) {
 }
 
 static void set_ninecraft_size(int width, int height) {
-    if (version_id >= version_id_0_10_0) {
+    if (version_id == version_id_0_14_3) {
+        if (minecraft_client_set_rendering_size) {
+#ifdef _WIN32
+            ninecraft_call_guest(
+                (void *)minecraft_client_set_rendering_size,
+                3,
+                (uintptr_t)ninecraft_app,
+                (uintptr_t)width,
+                (uintptr_t)height);
+#else
+            minecraft_client_set_rendering_size(ninecraft_app, width, height);
+#endif
+        }
+        if (minecraft_client_set_ui_size_and_scale) {
+#ifdef _WIN32
+            uint32_t scale_bits = 0;
+            float scale = 0.0f;
+            memcpy(&scale_bits, &scale, sizeof(scale_bits));
+            ninecraft_call_guest(
+                (void *)minecraft_client_set_ui_size_and_scale,
+                4,
+                (uintptr_t)ninecraft_app,
+                (uintptr_t)width,
+                (uintptr_t)height,
+                (uintptr_t)scale_bits);
+#else
+            minecraft_client_set_ui_size_and_scale(ninecraft_app, width, height, 0.0f);
+#endif
+        }
+        return;
+    } else if (version_id >= version_id_0_10_0) {
         minecraft_client_set_size(ninecraft_app, width, height, 2.f);
     } else {
         minecraft_set_size(ninecraft_app, width, height);
@@ -710,7 +857,12 @@ static void resize_callback(struct SDL_Window *window, int width, int height) {
 static void char_callback(struct SDL_Window *window, char *codepoint) {
     if (is_keyboard_visible) {
         chat_mod_append_char(codepoint[0]);
-        if (version_id >= version_id_0_6_0 && version_id <= version_id_0_7_1) {
+        if (version_id == version_id_0_14_3 && keyboard_feed_text_0_14_3) {
+            android_string_t str;
+            android_string_cstr(&str, codepoint);
+            call_keyboard_feed_text_0_14_3(&str, false);
+            android_string_destroy(&str);
+        } else if (version_id >= version_id_0_6_0 && version_id <= version_id_0_7_1) {
             keyboard_feed_text_0_6_0(codepoint[0]);
         } else if (version_id >= version_id_0_7_2) {
             android_string_t str;
@@ -759,6 +911,23 @@ static void key_callback(struct SDL_Window *window, int key, int scancode, int a
             } else if (action == SDL_KEYUP) {
                 ctrl_pressed = false;
             }
+        }
+        if (version_id == version_id_0_14_3) {
+            int windows_key = convert_android_key_0_14_3 ? call_convert_android_key_0_14_3(android_key) : 0;
+            if (windows_key > 0 && windows_key < 256) {
+                keyboard_feed((unsigned char)windows_key, action == SDL_KEYDOWN ? 1 : 0);
+            }
+            if (action == SDL_KEYDOWN && is_keyboard_visible && keyboard_feed_text_0_14_3 &&
+                (key == SDLK_BACKSPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
+                android_string_t control_text;
+                /* ChatScreen::handleTextChar sends on LF (0x0a).  CR (0x0d)
+                 * is ordinary text in MCPE 0.14.3 and would be appended to the
+                 * message instead of submitting it. */
+                android_string_cstr(&control_text, key == SDLK_BACKSPACE ? "\b" : "\n");
+                call_keyboard_feed_text_0_14_3(&control_text, false);
+                android_string_destroy(&control_text);
+            }
+            return;
         }
         int game_keycode = getGameKeyCode(key);
         if (key == SDLK_q && action == SDL_KEYDOWN && mouse_pointer_hidden && version_id >= version_id_0_5_0 && version_id <= version_id_0_11_1) {
@@ -1002,11 +1171,58 @@ void release_mouse() {
     mod_loader_execute_on_minecraft_release_mouse(ninecraft_app, version_id);
 }
 
+int __android_log_write(int prio, const char *tag, const char *text) {
+    printf("[%s] %s\n", tag ? tag : "Android", text ? text : "");
+    return 0;
+}
+
+static void configure_app_platform_0_14_3(app_platform_0_9_0_t *plat) {
+    memcpy(&platform_vtable_0_14_3, plat->vtable, sizeof(platform_vtable_0_14_3));
+    plat->vtable = platform_vtable_0_14_3.slots;
+
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_DATA_URL] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getDataUrl);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_IMAGE_PATH] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getImagePath_0_14_3);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_SHOW_KEYBOARD] = (void *)AppPlatform_linux$showKeyboard_0_14_3;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_HIDE_KEYBOARD] = (void *)AppPlatform_linux$hideKeyboard_0_14_3;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_HIDE_MOUSE_POINTER] = (void *)grab_mouse;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_SHOW_MOUSE_POINTER] = (void *)release_mouse;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_SWAP_BUFFERS] = (void *)AppPlatform_linux$swapBuffers;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_SYSTEM_REGION] = (void *)AppPlatform_linux$getSystemRegion;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_GRAPHICS_VENDOR] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsVendor);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_GRAPHICS_RENDERER] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsRenderer);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_GRAPHICS_VERSION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsVersion);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_GRAPHICS_EXTENSIONS] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsExtensions);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_PICK_IMAGE] = (void *)AppPlatform_linux$pickImage;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_EXTERNAL_STORAGE_PATH] = (void *)AppPlatform_linux$getExternalStoragePath;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_INTERNAL_STORAGE_PATH] = (void *)AppPlatform_linux$getInternalStoragePath;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_USERDATA_PATH] = (void *)AppPlatform_linux$getUserdataPath;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_SCREEN_WIDTH] = (void *)AppPlatform_linux$getScreenWidth;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_SCREEN_HEIGHT] = (void *)AppPlatform_linux$getScreenHeight;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_PIXELS_PER_MILLIMETER] = (void *)AppPlatform_linux$getPixelsPerMillimeter;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_UPDATE_TEXT_BOX_TEXT] = (void *)AppPlatform_linux$updateTextBoxText;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_IS_KEYBOARD_VISIBLE] = (void *)AppPlatform_linux$isKeyboardVisible_0_14_3;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_SUPPORTS_VIBRATION] = (void *)AppPlatform_linux$supportsVibration;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_VIBRATE] = (void *)AppPlatform_linux$vibrate;
+    /* 0.14 returns std::string here (not the older {data,size} AssetFile). */
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_READ_ASSET_FILE] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$readAssetFile_0_9_0);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_APPLICATION_ID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getApplicationId);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_AVAILABLE_MEMORY] = (void *)AppPlatform_linux$getAvailableMemory;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_BROADCAST_ADDRESSES] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getBroadcastAddresses);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_MODEL_NAME] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getModelName);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_DEVICE_ID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getDeviceId);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_CREATE_UUID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$createUUID);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_IS_FIRST_SNOOP_LAUNCH] = (void *)AppPlatform_linux$isFirstSnoopLaunch;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_HAS_HARDWARE_INFORMATION_CHANGED] = (void *)AppPlatform_linux$hasHardwareInformationChanged;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_IS_TABLET] = (void *)AppPlatform_linux$isTablet;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_PLATFORM_TEMP_PATH] = (void *)AppPlatform_linux$getPlatformTempPath;
+}
+
 void gles_hook() {
     add_custom_hook("glAlphaFunc", (void *)gl_alpha_func);
     add_custom_hook("glBindBuffer", (void *)gl_bind_buffer);
     add_custom_hook("glBindTexture", (void *)gl_bind_texture);
     add_custom_hook("glBlendFunc", (void *)gl_blend_func);
+    add_custom_hook("glBlendFuncSeparate", (void *)gl_blend_func_separate);
     add_custom_hook("glBufferData", (void *)gl_buffer_data);
     add_custom_hook("glClear", (void *)gl_clear);
     add_custom_hook("glClearColor", (void *)gl_clear_color);
@@ -1099,11 +1315,57 @@ void gles_hook() {
     add_custom_hook("glDeleteShader", (void *)gl_delete_shader);
     add_custom_hook("glUniform1i", (void *)gl_uniform_1_i);
     add_custom_hook("glBufferSubData", (void *)gl_buffer_sub_data);
+    add_custom_hook("glBindRenderbuffer", (void *)gl_bind_renderbuffer);
+    add_custom_hook("glGenRenderbuffers", (void *)gl_gen_renderbuffers);
+    add_custom_hook("glDeleteRenderbuffers", (void *)gl_delete_renderbuffers);
+    add_custom_hook("glBindFramebuffer", (void *)gl_bind_framebuffer);
+    add_custom_hook("glCheckFramebufferStatus", (void *)gl_check_framebuffer_status);
+    add_custom_hook("glGenFramebuffers", (void *)gl_gen_framebuffers);
+    add_custom_hook("glDeleteFramebuffers", (void *)gl_delete_framebuffers);
+    add_custom_hook("glGetIntegerv", (void *)gl_get_integer_v);
+    add_custom_hook("glClearDepthf", (void *)gl_clear_depth_f);
+    add_custom_hook("glFramebufferRenderbuffer", (void *)gl_framebuffer_renderbuffer);
+    add_custom_hook("glRenderbufferStorage", (void *)gl_renderbuffer_storage);
+    add_custom_hook("glFlush", (void *)gl_flush);
+    add_custom_hook("glIsTexture", (void *)gl_is_texture);
+    add_custom_hook("glGetTexParameteriv", (void *)gl_get_tex_parameter_i_v);
+    add_custom_hook("glFramebufferTexture2D", (void *)gl_framebuffer_texture_2_d);
 }
 
 int __my_srget(FILE *astream) {
     puts("__srget");
     return EOF;
+}
+
+static double android_difftime(int32_t end_time, int32_t beginning_time) {
+    return (double)end_time - (double)beginning_time;
+}
+
+static int ninecraft_chmod(const char *path, int mode) {
+#ifdef _WIN32
+    return _chmod(path, mode);
+#else
+    return chmod(path, (mode_t)mode);
+#endif
+}
+
+typedef struct {
+    int32_t actime;
+    int32_t modtime;
+} ninecraft_android_utimbuf_t;
+
+static int ninecraft_utime(const char *path, const ninecraft_android_utimbuf_t *times) {
+#ifdef _WIN32
+    if (!times) {
+        return _utime32(path, NULL);
+    }
+    struct __utimbuf32 native_times;
+    native_times.actime = times->actime;
+    native_times.modtime = times->modtime;
+    return _utime32(path, &native_times);
+#else
+    return utime(path, (const struct utimbuf *)times);
+#endif
 }
 
 void missing_hook() {
@@ -1118,8 +1380,16 @@ void missing_hook() {
     add_custom_hook("uncompress", uncompress);
     add_custom_hook("compress", compress);
     add_custom_hook("compressBound", compressBound);
+    add_custom_hook("crc32", crc32);
+    add_custom_hook("adler32", adler32);
 
     add_custom_hook("__srget", __my_srget);
+    add_custom_hook("fgetc", android_getc);
+    add_custom_hook("fseeko", android_fseek);
+    add_custom_hook("ftello", android_ftell);
+    add_custom_hook("difftime", android_difftime);
+    add_custom_hook("chmod", ninecraft_chmod);
+    add_custom_hook("utime", ninecraft_utime);
 }
 
 unsigned char mcpi_api_initialized = 0;
@@ -1300,6 +1570,8 @@ static bool detect_version() {
             version_id = version_id_0_11_0;
         } else if (strcmp(verstr, "v0.11.1 alpha") == 0) {
             version_id = version_id_0_11_1;
+        } else if (strcmp(verstr, "v0.14.3 alpha") == 0) {
+            version_id = version_id_0_14_3;
         } else {
             puts("Unsupported Version!");
             found = false;
@@ -1367,15 +1639,24 @@ static bool detect_version() {
 int main(int argc, char **argv) {
     struct soinfo *so_liblog, *so_libgles, *so_libgles2, *so_libegl;
     struct soinfo *so_libandroid, *so_libopensles, *so_libz;
+    struct soinfo *so_libgnustl_shared, *so_libfmod;
     char *storage_path, *mods_path, *ovc_path, *icon_path, *global_overrides_path;
     static struct stat st = {0};
     int icon_width, icon_height;
     SDL_GLContext gl_context;
-    size_t ninecraft_app_size, minecraft_isgrabbed_offset;
+    size_t ninecraft_app_size = 0, minecraft_isgrabbed_offset = 0;
     bool running = true;
     SDL_Event event;
     char *minecraft_options;
     void *icon_pixels;
+    app_platform_0_9_0_t *plat = NULL;
+    app_context_0_9_0_t *context = NULL;
+
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(ninecraft_exception_filter);
+#endif
 
     parse_game_parameters(argc, argv);
 
@@ -1524,6 +1805,7 @@ int main(int argc, char **argv) {
     gles_hook();
     missing_hook();
     add_custom_hook("__android_log_print", (void *)__android_log_print);
+    add_custom_hook("__android_log_write", (void *)__android_log_write);
     stub_symbols(android_symbols, (void *)android_stub);
     stub_symbols(egl_symbols, (void *)egl_stub);
 
@@ -1541,7 +1823,10 @@ int main(int argc, char **argv) {
     so_libopensles = android_library_create("libOpenSLES.so");
     so_libz = android_library_create("libz.so");
 
-    handle = load_library("libminecraftpe.so");
+    so_libgnustl_shared = load_library("libgnustl_shared.so", false);
+    so_libfmod = load_library("libfmod.so", false);
+    add_custom_hook("FMOD_System_Create", (void *)ninecraft_fmod_system_create_disabled);
+    handle = load_library("libminecraftpe.so", true);
 
     if (!handle) {
         puts("libminecraftpe.so not loaded");
@@ -1567,6 +1852,38 @@ int main(int argc, char **argv) {
     multitouch_setup_hooks(handle);
     keyboard_setup_hooks(handle);
     minecraft_setup_hooks(handle);
+    if (version_id == version_id_0_14_3) {
+        void *store_create;
+        void *http_construct;
+        void *http_send;
+        void *http_abort;
+
+        mouse_feed_0_14_3 = (mouse_feed_0_14_3_t)android_dlsym(handle, "_ZN5Mouse4feedEccssss");
+        convert_android_key_0_14_3 = (convert_android_key_0_14_3_t)android_dlsym(handle, "_Z37convertAndroidKeyCodeToWindowsKeyCodei");
+        keyboard_feed_text_0_14_3 = (keyboard_feed_text_0_14_3_t)android_dlsym(handle, "_ZN8Keyboard8feedTextERKSsb");
+        store_create = android_dlsym(handle, "_ZN12AndroidStore21createGooglePlayStoreERKSsR13StoreListener");
+        http_construct = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroidC2ER11HTTPRequest");
+        http_send = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid4sendEv");
+        http_abort = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid5abortEv");
+
+        if (!mouse_feed_0_14_3 || !convert_android_key_0_14_3 || !keyboard_feed_text_0_14_3 ||
+            !store_create || !http_construct || !http_send || !http_abort ||
+            !app_platform_construct || !minecraft_client_construct || !app_init ||
+            !minecraft_client_update || !minecraft_client_set_rendering_size ||
+            !minecraft_client_set_ui_size_and_scale || !minecraft_client_get_options) {
+            puts("MCPE 0.14.3 required exports are incomplete");
+            return 1;
+        }
+
+        /* StoreFactory creates the Android Java store during the client
+         * constructor.  Route it to the native no-purchase store before that
+         * constructor runs, since no JVM exists in the desktop host. */
+        DETOUR(store_create, GET_SYSV_WRAPPER(ninecraft_store_create), 1);
+        ninecraft_http_setup_hooks(handle);
+        DETOUR(http_construct, ninecraft_http_construct, 1);
+        DETOUR(http_send, ninecraft_http_send, 1);
+        DETOUR(http_abort, ninecraft_http_abort, 1);
+    }
     inject_mods(handle, version_id);
     mod_loader_load_all(handle, version_id);
 
@@ -1678,10 +1995,50 @@ int main(int argc, char **argv) {
         ninecraft_app_size = MINECRAFTCLIENT_SIZE_0_11_0;
     } else if (version_id == version_id_0_11_1) {
         ninecraft_app_size = MINECRAFTCLIENT_SIZE_0_11_1;
+    } else if (version_id == version_id_0_14_3) {
+        ninecraft_app_size = MINECRAFTCLIENT_SIZE_0_14_3;
     }
-    ninecraft_app = malloc(ninecraft_app_size);
+
+    if (!ninecraft_app_size) {
+        puts("Unsupported MinecraftClient object size");
+        return 1;
+    }
+
+    /* 0.14.3's MinecraftClient constructor asks AppPlatform::mSingleton for
+     * the userdata path, so the platform must exist before the client. */
+    if (version_id == version_id_0_14_3) {
+        plat = (app_platform_0_9_0_t *)calloc(1, sizeof(app_platform_0_9_0_t));
+        context = (app_context_0_9_0_t *)calloc(1, sizeof(app_context_0_9_0_t));
+        if (!plat || !context) {
+            puts("out of memory");
+            return 1;
+        }
+#ifdef _WIN32
+        ninecraft_call_guest((void *)app_platform_construct, 1, (uintptr_t)plat);
+#else
+        app_platform_construct(plat);
+#endif
+        configure_app_platform_0_14_3(plat);
+        /* The Android activity normally supplies this state after creating the
+         * native AppPlatform.  The desktop host already owns an active SDL
+         * window, so expose that initial pointer focus to the client. */
+        *((unsigned char *)plat + 4) = 1;
+    }
+
+    ninecraft_app = calloc(1, ninecraft_app_size);
     if (version_id >= version_id_0_9_0 && version_id <= version_id_0_9_5) {
         ninecraft_app_construct_2(ninecraft_app, 0, NULL);
+    } else if (version_id == version_id_0_14_3) {
+#ifdef _WIN32
+        ninecraft_call_guest(
+            (void *)minecraft_client_construct,
+            3,
+            (uintptr_t)ninecraft_app,
+            (uintptr_t)0,
+            (uintptr_t)NULL);
+#else
+        minecraft_client_construct(ninecraft_app, 0, NULL);
+#endif
     } else if (version_id >= version_id_0_10_0) {
         minecraft_client_construct(ninecraft_app, 0, NULL);
     } else {
@@ -1703,17 +2060,15 @@ int main(int argc, char **argv) {
     mod_loader_execute_on_minecraft_construct(ninecraft_app, version_id);
 
     if (version_id >= version_id_0_9_0) {
-        app_platform_0_9_0_t *plat = malloc(sizeof(app_platform_0_9_0_t));
-        app_context_0_9_0_t *context = (app_context_0_9_0_t *)malloc(sizeof(app_context_0_9_0_t));
-
-        context->egl_context = NULL;
-        context->egl_display = NULL;
-        context->egl_surface = NULL;
-        context->u0 = NULL;
-        context->platform = NULL;
-        context->do_render = false;
-
-        app_platform_construct(plat);
+        if (!plat) {
+            plat = (app_platform_0_9_0_t *)calloc(1, sizeof(app_platform_0_9_0_t));
+            context = (app_context_0_9_0_t *)calloc(1, sizeof(app_context_0_9_0_t));
+            if (!plat || !context) {
+                puts("out of memory");
+                return 1;
+            }
+            app_platform_construct(plat);
+        }
         if (version_id >= version_id_0_9_0 && version_id <= version_id_0_9_5) {
             memcpy(&platform_vtable_0_9_0, plat->vtable, sizeof(app_platform_vtable_0_9_0_t));
             plat->vtable = (void **)&platform_vtable_0_9_0;
@@ -1796,7 +2151,9 @@ int main(int argc, char **argv) {
             DETOUR(android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid5abortEv"), ninecraft_http_abort, 1);
             DETOUR(android_dlsym(handle, "_ZN12AndroidStore21createGooglePlayStoreERKSsR13StoreListener"), GET_SYSV_WRAPPER(ninecraft_store_create), 1);
         }
-        context->platform = plat;
+        if (version_id != version_id_0_14_3) {
+            context->platform = plat;
+        }
 #ifdef _WIN32
         call_with_custom_stack(app_init, NULL, 1024 * 1024, 2, ninecraft_app, context);
 #else
@@ -1958,13 +2315,15 @@ int main(int argc, char **argv) {
     }
     
     while (running) {
-        if (((bool *)ninecraft_app)[minecraft_isgrabbed_offset]) {
-            if (!mouse_pointer_hidden) {
-                grab_mouse();
-            }
-        } else {
-            if (mouse_pointer_hidden) {
-                release_mouse();
+        if (version_id <= version_id_0_11_1) {
+            if (((bool *)ninecraft_app)[minecraft_isgrabbed_offset]) {
+                if (!mouse_pointer_hidden) {
+                    grab_mouse();
+                }
+            } else {
+                if (mouse_pointer_hidden) {
+                    release_mouse();
+                }
             }
         }
         if (version_id >= version_id_0_6_0 && version_id <= version_id_0_8_1) {
@@ -1980,13 +2339,17 @@ int main(int argc, char **argv) {
         }
 
 #ifdef _WIN32
-        if (version_id >= version_id_0_10_0) {
+        if (version_id == version_id_0_14_3) {
+            call_with_custom_stack(minecraft_client_update, NULL, 1024 * 1024, 1, ninecraft_app);
+        } else if (version_id >= version_id_0_10_0) {
             call_with_custom_stack(minecraft_update, NULL, 1024 * 1024, 1, ninecraft_app);
         } else {
             call_with_custom_stack(ninecraft_app_update, NULL, 1024 * 1024, 1, ninecraft_app);
         }
 #else
-        if (version_id >= version_id_0_10_0) {
+        if (version_id == version_id_0_14_3) {
+            minecraft_client_update(ninecraft_app);
+        } else if (version_id >= version_id_0_10_0) {
             minecraft_update(ninecraft_app);
         } else {
             ninecraft_app_update(ninecraft_app);
@@ -2012,6 +2375,14 @@ int main(int argc, char **argv) {
                 mouse_scroll_callback(_window, event.wheel.preciseX, event.wheel.preciseY, event.wheel.direction);
             } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 resize_callback(_window, event.window.data1, event.window.data2);
+            } else if (version_id == version_id_0_14_3 && plat && event.type == SDL_WINDOWEVENT) {
+                if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED ||
+                    event.window.event == SDL_WINDOWEVENT_ENTER) {
+                    *((unsigned char *)plat + 4) = 1;
+                } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+                           event.window.event == SDL_WINDOWEVENT_LEAVE) {
+                    *((unsigned char *)plat + 4) = 0;
+                }
             }
         }
     }

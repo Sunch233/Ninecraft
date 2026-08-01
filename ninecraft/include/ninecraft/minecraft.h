@@ -418,6 +418,7 @@
 #endif
 
 #if defined(__i386__) || defined(_M_IX86)
+#define MINECRAFTCLIENT_SIZE_0_14_3 0x1F4
 #define MINECRAFTCLIENT_SIZE_0_11_1 0x18C
 #define MINECRAFTCLIENT_SIZE_0_11_0 0x13c
 #define MINECRAFTCLIENT_SIZE_0_10_5 0x12c
@@ -654,6 +655,14 @@ typedef void (*minecraft_client_set_size_t)(void *minecraft_client, uint32_t wid
 
 extern minecraft_client_set_size_t minecraft_client_set_size;
 
+typedef void (*minecraft_client_set_rendering_size_t)(void *minecraft_client, uint32_t width, uint32_t height);
+
+extern minecraft_client_set_rendering_size_t minecraft_client_set_rendering_size;
+
+typedef void (*minecraft_client_set_ui_size_and_scale_t)(void *minecraft_client, uint32_t width, uint32_t height, float scale);
+
+extern minecraft_client_set_ui_size_and_scale_t minecraft_client_set_ui_size_and_scale;
+
 typedef void (*minecraft_client_handle_back_t)(void *minecraft_client, bool keep_screen);
 
 extern minecraft_client_handle_back_t minecraft_client_handle_back;
@@ -661,6 +670,8 @@ extern minecraft_client_handle_back_t minecraft_client_handle_back;
 typedef void (*minecraft_update_t)(void *minecraft);
 
 extern minecraft_update_t minecraft_update;
+
+extern minecraft_update_t minecraft_client_update;
 
 typedef void (*minecraft_client_construct_t)(void *minecraft_client, int argc, char **argv);
 

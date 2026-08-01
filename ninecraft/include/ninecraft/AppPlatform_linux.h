@@ -44,6 +44,9 @@ typedef union {
 extern ninecraft_options_t platform_options;
 extern bool is_keyboard_visible;
 
+EXTERN_SYSV_WRAPPER(AppPlatform_linux$getDataUrl);
+void AppPlatform_linux$getDataUrl(android_string_t *ret, AppPlatform_linux *app_platform);
+
 void AppPlatform_linux$saveImage(AppPlatform_linux *app_platform, android_string_t *resource_path, android_string_t *pixels, int width, int height);
 
 void AppPlatform_linux$swapBuffers(AppPlatform_linux *app_platform);
@@ -72,6 +75,13 @@ void AppPlatform_linux$loadTGA_0_9_0(AppPlatform_linux *app_platform, image_data
 
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$getImagePath);
 void AppPlatform_linux$getImagePath(android_string_t *ret, AppPlatform_linux *app_platform, android_string_t *resource_path, bool is_full);
+
+EXTERN_SYSV_WRAPPER(AppPlatform_linux$getImagePath_0_14_3);
+void AppPlatform_linux$getImagePath_0_14_3(
+    android_string_t *ret,
+    AppPlatform_linux *app_platform,
+    android_string_t *resource_path,
+    int texture_location);
 
 void AppPlatform_linux$loadPNG(AppPlatform_linux *app_platform, image_data_t *image, android_string_t *resource_path, bool alpha);
 
@@ -146,7 +156,11 @@ extern bool AppPlatform_linux$hasBuyButtonWhenInvalidLicense(AppPlatform_linux *
 
 extern void AppPlatform_linux$hideKeyboard(AppPlatform_linux *app_platform);
 
+extern void AppPlatform_linux$hideKeyboard_0_14_3(AppPlatform_linux *app_platform);
+
 extern bool AppPlatform_linux$isKeyboardVisible(AppPlatform_linux *app_platform);
+
+extern bool AppPlatform_linux$isKeyboardVisible_0_14_3(AppPlatform_linux *app_platform);
 
 extern bool AppPlatform_linux$isNetworkEnabled(AppPlatform_linux *app_platform);
 
@@ -174,6 +188,14 @@ extern void AppPlatform_linux$showDialog(AppPlatform_linux *app_platform, int32_
 
 extern void AppPlatform_linux$showKeyboard(AppPlatform_linux *app_platform);
 
+extern void AppPlatform_linux$showKeyboard_0_14_3(
+    AppPlatform_linux *app_platform,
+    android_string_t *text,
+    int max_length,
+    bool multiline,
+    bool numeric,
+    const void *caret_position);
+
 void AppPlatform_linux$showKeyboard2(AppPlatform_linux *app_platform, bool show);
 
 extern void AppPlatform_linux$uploadPlatformDependentData(AppPlatform_linux *app_platform, int32_t size, void *data);
@@ -199,6 +221,10 @@ void AppPlatform_linux$getGraphicsExtensions(android_string_t *ret, AppPlatform_
 android_string_t *AppPlatform_linux$getExternalStoragePath(AppPlatform_linux *app_platform);
 
 android_string_t *AppPlatform_linux$getInternalStoragePath(AppPlatform_linux *app_platform);
+
+android_string_t *AppPlatform_linux$getUserdataPath(AppPlatform_linux *app_platform);
+
+android_string_t *AppPlatform_linux$getPlatformTempPath(AppPlatform_linux *app_platform);
 
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$getApplicationId);
 void AppPlatform_linux$getApplicationId(android_string_t *ret, AppPlatform_linux *app_platform);

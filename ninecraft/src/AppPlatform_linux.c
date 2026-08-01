@@ -1,6 +1,7 @@
 #include <ninecraft/AppPlatform_linux.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <ninecraft/android/android_alloc.h>
 #include <ninecraft/version_ids.h>
@@ -12,6 +13,8 @@
 #include <SDL.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <io.h>
+#define access _access
 #define popen _popen
 #define pclose	_pclose
 #else
@@ -521,6 +524,13 @@ void *app_platform_vtable_0_10_0[] = {
     (void *)AppPlatform_linux$updateStatsUserData,
 };
 
+SYSV_WRAPPER(AppPlatform_linux$getDataUrl, 2)
+void AppPlatform_linux$getDataUrl(android_string_t *ret, AppPlatform_linux *app_platform) {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/assets/", game_parameters.game_path);
+    android_string_cstr(ret, path);
+}
+
 void AppPlatform_linux$saveImage(AppPlatform_linux *app_platform, android_string_t *resource_path, android_string_t *pixels, int width, int height) {
     //puts("debug: AppPlatform_linux::saveImage");
 }
@@ -602,6 +612,22 @@ void AppPlatform_linux$getImagePath(android_string_t *ret, AppPlatform_linux *ap
         strcat(str, resource_path_c);
         android_string_cstr(ret, str);
         free(str);
+    } else {
+        android_string_cstr(ret, resource_path_c);
+    }
+}
+
+SYSV_WRAPPER(AppPlatform_linux$getImagePath_0_14_3, 4)
+void AppPlatform_linux$getImagePath_0_14_3(
+    android_string_t *ret,
+    AppPlatform_linux *app_platform,
+    android_string_t *resource_path,
+    int texture_location) {
+    char *resource_path_c = android_string_to_str(resource_path);
+    if (texture_location == 0) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/assets/images/%s", game_parameters.game_path, resource_path_c);
+        android_string_cstr(ret, path);
     } else {
         android_string_cstr(ret, resource_path_c);
     }
@@ -998,9 +1024,19 @@ void AppPlatform_linux$hideKeyboard(AppPlatform_linux *app_platform) {
     is_keyboard_visible = false;
 }
 
+void AppPlatform_linux$hideKeyboard_0_14_3(AppPlatform_linux *app_platform) {
+    is_keyboard_visible = false;
+    *((unsigned char *)app_platform + 5) = 0;
+    SDL_StopTextInput();
+}
+
 bool AppPlatform_linux$isKeyboardVisible(AppPlatform_linux *app_platform) {
     //puts("debug: AppPlatform_linux::isKeyboardVisible");
     return false;
+}
+
+bool AppPlatform_linux$isKeyboardVisible_0_14_3(AppPlatform_linux *app_platform) {
+    return *((unsigned char *)app_platform + 5) != 0;
 }
 
 bool AppPlatform_linux$isNetworkEnabled(AppPlatform_linux *app_platform) {
@@ -1102,45 +1138,67 @@ FLOAT_ABI_FIX void AppPlatform_linux$playSound(AppPlatform_linux *app_platform, 
 SYSV_WRAPPER(AppPlatform_linux$readAssetFile, 3)
 void AppPlatform_linux$readAssetFile(asset_file *ret, AppPlatform_linux *app_platform, android_string_t *path_str) {
     //puts("debug: AppPlatform_linux::readAssetFile");
-    android_string_t str;
     char *resource = android_string_to_str(path_str);
-    size_t resourcelen = strlen(resource);
-    char *path = (char *)malloc(1024);
-    path[0] = '\0';
-    strcat(path, game_parameters.game_path);
-    strcat(path, "/overrides/assets/");
-    strcat(path, resource);
-    if (access(path, 0) != 0) {
-        path[0] = '\0';
-        strcat(path, game_parameters.home_path);
-        strcat(path, "/global_overrides/assets/");
-        strcat(path, resource);
-        if (access(path, 0) != 0) {
-            path[0] = '\0';
-            strcat(path, game_parameters.game_path);
-            strcat(path, "/assets/");
-            strcat(path, resource);
-        }
-    }
-    asset_file asset;
+    size_t game_root_length = strlen(game_parameters.game_path);
+    size_t home_root_length = strlen(game_parameters.home_path);
+    size_t root_length = game_root_length > home_root_length ? game_root_length : home_root_length;
+    size_t resource_length = strlen(resource);
+    size_t path_capacity;
+    char *path = NULL;
+    FILE *file = NULL;
+    long file_size;
+    asset_file asset = {NULL, -1};
 
-    FILE *file = fopen(path, "rb");
-    if (!file) {
-        printf("Error[%d] failed to read %s\n", errno, path);
-        free(path);
-        asset.data = NULL;
-        asset.size = -1;
+    if (resource_length > SIZE_MAX - sizeof("/global_overrides/assets/") ||
+        root_length > SIZE_MAX - resource_length - sizeof("/global_overrides/assets/")) {
         *ret = asset;
         return;
     }
-    printf("Read asset: %s\n", path);
-    free(path);
-    fseek(file, 0, SEEK_END);
-    asset.size = ftell(file);
-    asset.data = (char *) malloc(asset.size);
-    fseek(file, 0, SEEK_SET);
-    fread(asset.data, 1, asset.size, file);
+    path_capacity = root_length + resource_length + sizeof("/global_overrides/assets/");
+    path = (char *)malloc(path_capacity);
+    if (!path) {
+        *ret = asset;
+        return;
+    }
 
+    snprintf(path, path_capacity, "%s/overrides/assets/%s", game_parameters.game_path, resource);
+    if (access(path, 0) != 0) {
+        snprintf(path, path_capacity, "%s/global_overrides/assets/%s", game_parameters.home_path, resource);
+        if (access(path, 0) != 0) {
+            snprintf(path, path_capacity, "%s/assets/%s", game_parameters.game_path, resource);
+        }
+    }
+
+    file = fopen(path, "rb");
+    if (!file) {
+        printf("Error[%d] failed to read %s\n", errno, path);
+        goto done;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0 ||
+        (file_size = ftell(file)) < 0 || file_size > INT_MAX ||
+        fseek(file, 0, SEEK_SET) != 0) {
+        printf("Error[%d] failed to size %s\n", errno, path);
+        goto done;
+    }
+
+    if (file_size > 0) {
+        asset.data = (char *)malloc((size_t)file_size);
+        if (!asset.data || fread(asset.data, 1, (size_t)file_size, file) != (size_t)file_size) {
+            printf("Error[%d] failed to read all of %s\n", errno, path);
+            free(asset.data);
+            asset.data = NULL;
+            goto done;
+        }
+    }
+    asset.size = (int)file_size;
+    printf("Read asset: %s\n", path);
+
+done:
+    if (file) {
+        fclose(file);
+    }
+    free(path);
     *ret = asset;
 }
 
@@ -1148,11 +1206,12 @@ SYSV_WRAPPER(AppPlatform_linux$readAssetFile_0_9_0, 3)
 void AppPlatform_linux$readAssetFile_0_9_0(android_string_t *ret, AppPlatform_linux *app_platform, android_string_t *path_str) {
     asset_file asset;
     AppPlatform_linux$readAssetFile(&asset, app_platform, path_str);
-    if (asset.data == NULL && asset.size == -1) {
+    if (asset.data == NULL || asset.size < 1) {
         android_string_cstr(ret, "");
     } else {
         android_string_cstrl(ret, asset.data, asset.size);
     }
+    free(asset.data);
 }
 
 void AppPlatform_linux$saveScreenshot(AppPlatform_linux *app_platform, android_string_t *path, int width, int height) {
@@ -1168,6 +1227,23 @@ void AppPlatform_linux$showDialog(AppPlatform_linux *app_platform, int dialog_id
 void AppPlatform_linux$showKeyboard(AppPlatform_linux *app_platform) {
     //puts("debug: AppPlatform_linux::showKeyboard");
     is_keyboard_visible = true;
+}
+
+void AppPlatform_linux$showKeyboard_0_14_3(
+    AppPlatform_linux *app_platform,
+    android_string_t *text,
+    int max_length,
+    bool multiline,
+    bool numeric,
+    const void *caret_position) {
+    (void)text;
+    (void)max_length;
+    (void)multiline;
+    (void)numeric;
+    (void)caret_position;
+    is_keyboard_visible = true;
+    *((unsigned char *)app_platform + 5) = 1;
+    SDL_StartTextInput();
 }
 
 void AppPlatform_linux$showKeyboard2(AppPlatform_linux *app_platform, bool show) {
@@ -1295,4 +1371,12 @@ void AppPlatform_linux$pickImage(AppPlatform_linux *__this, image_picking_callba
     } else {
         callback->vtable->onImagePickingCanceled(callback);
     }
+}
+
+android_string_t *AppPlatform_linux$getUserdataPath(AppPlatform_linux *app_platform) {
+    return AppPlatform_linux$getInternalStoragePath(app_platform);
+}
+
+android_string_t *AppPlatform_linux$getPlatformTempPath(AppPlatform_linux *app_platform) {
+    return AppPlatform_linux$getInternalStoragePath(app_platform);
 }

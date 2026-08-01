@@ -15,6 +15,8 @@ extern void gl_bind_texture(GLenum target, GLuint texture);
 
 extern void gl_blend_func(GLenum sfactor, GLenum dfactor);
 
+extern void gl_blend_func_separate(GLenum src_rgb, GLenum dst_rgb, GLenum src_alpha, GLenum dst_alpha);
+
 extern void gl_buffer_data(GLenum target, GLsizeiptr size, const void *data, GLenum usage);
 
 extern void gl_clear(GLbitfield mask);
@@ -198,5 +200,35 @@ extern void gl_delete_shader(GLuint shader);
 extern void gl_uniform_1_i(GLint location, GLint v0);
 
 extern void gl_buffer_sub_data(GLenum target, GLintptr offset, GLsizeiptr size, const void *data);
+
+extern void gl_bind_renderbuffer(GLenum target, GLuint renderbuffer);
+
+extern void gl_gen_renderbuffers(GLsizei n, GLuint *renderbuffers);
+
+extern void gl_delete_renderbuffers(GLsizei n, const GLuint *renderbuffers);
+
+extern void gl_bind_framebuffer(GLenum target, GLuint framebuffer);
+
+extern GLenum gl_check_framebuffer_status(GLenum target);
+
+extern void gl_gen_framebuffers(GLsizei n, GLuint *framebuffers);
+
+extern void gl_delete_framebuffers(GLsizei n, const GLuint *framebuffers);
+
+extern void gl_get_integer_v(GLenum pname, GLint *data);
+
+extern void gl_clear_depth_f(GLclampf depth) FLOAT_ABI_FIX;
+
+extern void gl_framebuffer_renderbuffer(GLenum target, GLenum attachment, GLenum renderbuffer_target, GLuint renderbuffer);
+
+extern void gl_renderbuffer_storage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+
+extern void gl_flush(void);
+
+extern GLboolean gl_is_texture(GLuint texture);
+
+extern void gl_get_tex_parameter_i_v(GLenum target, GLenum pname, GLint *params);
+
+extern void gl_framebuffer_texture_2_d(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
 
 #endif

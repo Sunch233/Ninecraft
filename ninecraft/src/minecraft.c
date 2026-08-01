@@ -1,4 +1,5 @@
 #include <ninecraft/minecraft.h>
+#include <ninecraft/android/guest_call.h>
 #include <ancmp/android_dlfcn.h>
 #include <stddef.h>
 #include <ninecraft/version_ids.h>
@@ -22,8 +23,11 @@ minecraft_set_size_t minecraft_set_size = NULL;
 ninecraft_app_update_t ninecraft_app_update = NULL;
 ninecraft_app_handle_back_t ninecraft_app_handle_back = NULL;
 minecraft_client_set_size_t minecraft_client_set_size = NULL;
+minecraft_client_set_rendering_size_t minecraft_client_set_rendering_size = NULL;
+minecraft_client_set_ui_size_and_scale_t minecraft_client_set_ui_size_and_scale = NULL;
 minecraft_client_handle_back_t minecraft_client_handle_back = NULL;
 minecraft_update_t minecraft_update = NULL;
+minecraft_update_t minecraft_client_update = NULL;
 minecraft_client_construct_t minecraft_client_construct = NULL;
 minecraft_client_init_t minecraft_client_init = NULL;
 app_platform_construct_t app_platform_construct = NULL;
@@ -92,6 +96,15 @@ void *minecraft_get_options(void *minecraft, int version_id) {
         mc_options = (char *)minecraft + MINECRAFT_OPTIONS_OFFSET_0_9_4;
     } else if (version_id == version_id_0_9_5) {
         mc_options = (char *)minecraft + MINECRAFT_OPTIONS_OFFSET_0_9_5;
+    } else if (version_id == version_id_0_14_3) {
+#ifdef _WIN32
+        mc_options = (char *)ninecraft_call_guest(
+            (void *)minecraft_client_get_options,
+            1,
+            (uintptr_t)minecraft);
+#else
+        mc_options = (char *)minecraft_client_get_options(minecraft);
+#endif
     } else if (version_id >= version_id_0_10_0 && version_id <= version_id_0_11_1) {
         mc_options = (char *)minecraft_client_get_options(minecraft);
     }
@@ -351,8 +364,11 @@ void minecraft_setup_hooks(void *handle) {
     ninecraft_app_update = (ninecraft_app_update_t)android_dlsym(handle, "_ZN12NinecraftApp6updateEv");
     ninecraft_app_handle_back = (ninecraft_app_handle_back_t)android_dlsym(handle, "_ZN12NinecraftApp10handleBackEb");
     minecraft_client_set_size = (minecraft_client_set_size_t)android_dlsym(handle, "_ZN15MinecraftClient7setSizeEiif");
+    minecraft_client_set_rendering_size = (minecraft_client_set_rendering_size_t)android_dlsym(handle, "_ZN15MinecraftClient16setRenderingSizeEii");
+    minecraft_client_set_ui_size_and_scale = (minecraft_client_set_ui_size_and_scale_t)android_dlsym(handle, "_ZN15MinecraftClient17setUISizeAndScaleEiif");
     minecraft_client_handle_back = (minecraft_client_handle_back_t)android_dlsym(handle, "_ZN15MinecraftClient10handleBackEb");
     minecraft_update = (minecraft_update_t)android_dlsym(handle, "_ZN9Minecraft6updateEv");
+    minecraft_client_update = (minecraft_update_t)android_dlsym(handle, "_ZN15MinecraftClient6updateEv");
     minecraft_client_construct = (minecraft_client_construct_t)android_dlsym(handle, "_ZN15MinecraftClientC2EiPPc");
     minecraft_client_init = (minecraft_client_init_t)android_dlsym(handle, "_ZN15MinecraftClient4initEv");
     app_platform_construct = (app_platform_construct_t)android_dlsym(handle, "_ZN11AppPlatformC2Ev");

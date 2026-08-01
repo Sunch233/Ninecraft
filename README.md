@@ -111,6 +111,18 @@ Ninecraft does not include Minecraft game data. Extract a legally obtained,
 supported 32-bit Minecraft PE APK before trying to launch the game.
 For Windows/i686, the APK must contain `lib/x86/libminecraftpe.so`.
 
+MCPE `v0.14.3 alpha` x86 is the currently verified Windows target. Point
+`--game` at the APK extraction root, not at its `lib/x86` directory. The root
+must contain at least:
+
+```text
+assets/
+res/
+lib/x86/libminecraftpe.so
+lib/x86/libgnustl_shared.so
+lib/x86/libfmod.so
+```
+
 ```
 ./tools/extract.sh /path/to/your/apk
 ```
@@ -129,8 +141,30 @@ ninecraft-extract
 ```
 ### Visual Studio 2022 build tools (Microsoft Windows)
 ```
-.\build-msvc-win32\ninecraft\Release\ninecraft.exe
+.\run-msvc.bat "C:\path\to\extracted-mcpe-0.14.3-x86"
 ```
+
+The runner validates the extracted client, builds `Release` when necessary,
+and stores worlds and options under
+`%LOCALAPPDATA%\Ninecraft\MCPE-0.14.3-x86` by default. Pass a second argument
+to choose another user-data directory.
+
+The equivalent direct PowerShell launch is:
+
+```powershell
+$gameRoot = 'C:\path\to\extracted-mcpe-0.14.3-x86'
+$userDataRoot = Join-Path $env:LOCALAPPDATA 'Ninecraft\MCPE-0.14.3-x86'
+New-Item -ItemType Directory -Force -Path $userDataRoot | Out-Null
+
+& '.\build-msvc-win32\ninecraft\Release\ninecraft.exe' `
+    --game $gameRoot `
+    --home $userDataRoot
+```
+
+Menu navigation, world creation/loading, keyboard movement, mouse look, and
+save/quit have been verified with this client version. Sound currently uses a
+silent fallback because the Android FMOD Java bridge is not present on the
+desktop host.
 ### x86_64 & x86 (Linux):
 ```
 ./build-i686/ninecraft/ninecraft
