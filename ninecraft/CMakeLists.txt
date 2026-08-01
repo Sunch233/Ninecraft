@@ -14,6 +14,7 @@ if(WIN32)
 endif()
 
 if(MSVC)
+    target_compile_options(ninecraft PRIVATE /utf-8)
     set_property(TARGET ninecraft PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif()
 
