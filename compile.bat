@@ -1,12 +1,17 @@
 @echo off
+setlocal
 
 cd /D "%~dp0"
 
-if not exist build-win32 (
-    echo "Created build"
-    mkdir build-win32
-)
-cd build-win32
-cmake -G "MinGW Makefiles" .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build .
-cd ..
+git submodule sync --recursive
+if errorlevel 1 exit /b %errorlevel%
+git submodule update --init --recursive
+if errorlevel 1 exit /b %errorlevel%
+
+cmake -S . -B build-mingw32 -G "MinGW Makefiles"
+if errorlevel 1 exit /b %errorlevel%
+
+cmake --build build-mingw32 --parallel
+if errorlevel 1 exit /b %errorlevel%
+
+echo Built build-mingw32\ninecraft\ninecraft.exe

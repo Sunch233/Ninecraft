@@ -72,34 +72,51 @@ to install globaly see here [nix/README.md].
 ## Compiling on Microsoft Windows
 ### mingw32 & llvm-mingw
 ```
-git clone --recursive http://github.com/MCPI-Revival/Ninecraft.git
+git clone --recursive https://github.com/MCPI-Revival/Ninecraft.git
 cd Ninecraft
 .\compile.bat
 ```
 ### Visual Studio 2022 build tools
 ```
-git clone --recursive http://github.com/MCPI-Revival/Ninecraft.git
+git clone --recursive https://github.com/MCPI-Revival/Ninecraft.git
 cd Ninecraft
 .\compile-msvc.bat
 ```
+
+The MSVC script builds the `Release` configuration by default. Pass another
+configuration explicitly when needed, for example `compile-msvc.bat Debug`.
+It also initializes missing Git submodules automatically.
+
+To verify that the compiled launcher can start without requiring game data:
+```
+ctest --test-dir build-msvc-win32 -C Release --output-on-failure
+```
+
 ## Compiling on Linux
 ### x86_64 & x86:
 ```
-git clone --recursive http://github.com/MCPI-Revival/Ninecraft.git
+git clone --recursive https://github.com/MCPI-Revival/Ninecraft.git
 cd Ninecraft
 make build-i686
 ```
 ### arm64 & arm:
 ```
-git clone --recursive http://github.com/MCPI-Revival/Ninecraft.git
+git clone --recursive https://github.com/MCPI-Revival/Ninecraft.git
 cd Ninecraft
 make build-arm
 ```
 
 ## Before running for the first time
+Ninecraft does not include Minecraft game data. Extract a legally obtained,
+supported 32-bit Minecraft PE APK before trying to launch the game.
+For Windows/i686, the APK must contain `lib/x86/libminecraftpe.so`.
+
 ```
 ./tools/extract.sh /path/to/your/apk
 ```
+
+On Windows, run the extraction command from Git Bash, which is included with
+Git for Windows.
 ### on nix
 ```
 ninecraft-extract
@@ -108,11 +125,11 @@ ninecraft-extract
 ## Running
 ### mingw32 & llvm-mingw (Microsoft Windows)
 ```
-.\build-win32\ninecraft\ninecraft.exe
+.\build-mingw32\ninecraft\ninecraft.exe
 ```
 ### Visual Studio 2022 build tools (Microsoft Windows)
 ```
-.\build-win32\ninecraft\Debug\ninecraft.exe
+.\build-msvc-win32\ninecraft\Release\ninecraft.exe
 ```
 ### x86_64 & x86 (Linux):
 ```

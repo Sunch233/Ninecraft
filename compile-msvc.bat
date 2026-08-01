@@ -1,12 +1,20 @@
 @echo off
+setlocal
 
 cd /D "%~dp0"
 
-if not exist build-win32 (
-    echo "Created build"
-    mkdir build-win32
-)
-cd build-win32
-cmake -G "Visual Studio 17 2022" -A Win32 .. -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build .
-cd ..
+set "BUILD_CONFIG=%~1"
+if not defined BUILD_CONFIG set "BUILD_CONFIG=Release"
+
+git submodule sync --recursive
+if errorlevel 1 exit /b %errorlevel%
+git submodule update --init --recursive
+if errorlevel 1 exit /b %errorlevel%
+
+cmake -S . -B build-msvc-win32 -G "Visual Studio 17 2022" -A Win32
+if errorlevel 1 exit /b %errorlevel%
+
+cmake --build build-msvc-win32 --config "%BUILD_CONFIG%" --parallel
+if errorlevel 1 exit /b %errorlevel%
+
+echo Built build-msvc-win32\ninecraft\%BUILD_CONFIG%\ninecraft.exe
