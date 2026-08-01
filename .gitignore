@@ -6,6 +6,7 @@ build-win32/
 build-msvc-win32/
 build-mingw32/
 build-i686/
+build-msvc-v141xp/
 assets3/
 lib3/
 lib4/

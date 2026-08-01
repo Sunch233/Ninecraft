@@ -6,6 +6,9 @@
 ### Microsoft Windows:
 To compile Ninecraft on Windows, you'll need either MinGW32, LLVM-MinGW, or the Visual Studio 2022 Build Tools. CMake, Python and Git are also required.
 After python is installed you must run `pip install jinja2`
+
+The Windows XP build additionally requires the Visual Studio Installer
+component **C++ Windows XP Support for VS 2017 (v141) tools**.
 ### Debian/Ubuntu:
 x86_64:
 ```
@@ -87,10 +90,26 @@ The MSVC script builds the `Release` configuration by default. Pass another
 configuration explicitly when needed, for example `compile-msvc.bat Debug`.
 It also initializes missing Git submodules automatically.
 
+Windows MSVC builds statically link the bundled libraries and the MSVC/UCRT
+runtime. The resulting `ninecraft.exe` does not require VC Redistributable,
+SDL2, or zlib DLLs; normal Windows system DLLs are still used.
+
+### Windows XP SP3 (MSVC v141_xp)
+
+```bat
+.\compile-msvc-xp.bat
+```
+
+This uses a separate `build-msvc-v141xp` directory, targets 32-bit Windows XP
+SP3, and keeps the static runtime configuration. The resulting executable is
+`build-msvc-v141xp\ninecraft\Release\ninecraft.exe`. A graphics driver with
+OpenGL 2.0 support is still required.
+
 To verify that the compiled launcher can start without requiring game data:
 ```
 ctest --test-dir build-msvc-win32 -C Release --output-on-failure
 ```
+For the XP build, replace `build-msvc-win32` with `build-msvc-v141xp`.
 
 ## Compiling on Linux
 ### x86_64 & x86:
