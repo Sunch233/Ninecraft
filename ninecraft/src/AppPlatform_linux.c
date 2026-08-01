@@ -14,6 +14,7 @@
 #ifdef _WIN32
 #include <direct.h>
 #include <io.h>
+#include <ninecraft/device_identity.h>
 #define access _access
 #define popen _popen
 #define pclose	_pclose
@@ -1558,13 +1559,29 @@ void AppPlatform_linux$getApplicationId(android_string_t *ret, AppPlatform_linux
 
 SYSV_WRAPPER(AppPlatform_linux$getDeviceId, 2)
 void AppPlatform_linux$getDeviceId(android_string_t *ret, AppPlatform_linux *app_platform) {
-    //puts("debug: AppPlatform_linux::getDeviceId");
+    // 0.14.3 initializes this before App::init; older versions keep their
+    // historical desktop fallback.
+#ifdef _WIN32
+    const ninecraft_device_identity_t *identity =
+        ninecraft_device_identity_get();
+    if (identity) {
+        android_string_cstr(ret, (char *)identity->device_id);
+        return;
+    }
+#endif
     android_string_cstr(ret, "Ninecraft");
 }
 
 SYSV_WRAPPER(AppPlatform_linux$createUUID, 2)
 void AppPlatform_linux$createUUID(android_string_t *ret, AppPlatform_linux *app_platform) {
-    //puts("debug: AppPlatform_linux::createUUID");
+#ifdef _WIN32
+    const ninecraft_device_identity_t *identity =
+        ninecraft_device_identity_get();
+    if (identity) {
+        android_string_cstr(ret, (char *)identity->uuid);
+        return;
+    }
+#endif
     android_string_cstr(ret, "bef07706-f3c5-489d-b251-fb6a297e9b1c");
 }
 

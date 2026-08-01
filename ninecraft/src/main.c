@@ -54,6 +54,9 @@
 #include <ninecraft/ninecraft_store.h>
 #include <ninecraft/android/android_keycodes.h>
 #include <ninecraft/game_parameters.h>
+#ifdef _WIN32
+#include <ninecraft/device_identity.h>
+#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -1904,6 +1907,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+#ifdef _WIN32
+    if (version_id == version_id_0_14_3) {
+        if (!ninecraft_device_identity_initialize()) {
+            fputs(
+                "Unable to derive a stable device CID; MCPE initialization was blocked.\n",
+                stderr);
+            return 1;
+        }
+        puts("Device CID source: network adapter MAC address");
+    }
+#endif
+
     multitouch_setup_hooks(handle);
     keyboard_setup_hooks(handle);
     minecraft_setup_hooks(handle);
@@ -2219,9 +2234,30 @@ int main(int argc, char **argv) {
             context->platform = plat;
         }
 #ifdef _WIN32
+        if (version_id == version_id_0_14_3 &&
+            !ninecraft_device_identity_overwrite_client_id(
+                game_parameters.home_path)) {
+            fputs(
+                "Unable to refresh storage/minecraftpe/clientId.txt; "
+                "MCPE initialization was blocked.\n",
+                stderr);
+            return 1;
+        }
+#endif
+#ifdef _WIN32
         call_with_custom_stack(app_init, NULL, 1024 * 1024, 2, ninecraft_app, context);
 #else
         app_init(ninecraft_app, context);
+#endif
+#ifdef _WIN32
+        if (version_id == version_id_0_14_3 &&
+            !ninecraft_device_identity_verify_client(ninecraft_app, 0x1a8)) {
+            fputs(
+                "MCPE loaded a client ID that does not match this device; "
+                "initialization was blocked.\n",
+                stderr);
+            return 1;
+        }
 #endif
     } else {
         AppPlatform_linux$AppPlatform_linux(&platform, handle, version_id);
