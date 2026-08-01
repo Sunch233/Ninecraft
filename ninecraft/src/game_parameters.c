@@ -10,10 +10,27 @@
 
 game_parameters_t game_parameters = {
     (char *)NULL,
-    (char *)NULL
+    (char *)NULL,
+    false
 };
 
 static char cwd_path[1024];
+
+bool game_parameters_debug_requested(int argc, char **argv) {
+    int i;
+    for (i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--game") ||
+            !strcmp(argv[i], "--home")) {
+            if (i + 1 < argc) {
+                ++i;
+            }
+        } else if (!strcmp(argv[i], "-debug") ||
+                   !strcmp(argv[i], "--debug")) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void parse_game_parameters(int argc, char **argv) {
     int i;
@@ -27,10 +44,14 @@ void parse_game_parameters(int argc, char **argv) {
             if (++i < argc) {
                 game_parameters.home_path = argv[i];
             }
+        } else if (!strcmp(argv[i], "-debug") ||
+                   !strcmp(argv[i], "--debug")) {
+            game_parameters.debug_logging = true;
         } else if (!strcmp(argv[i], "--help")) {
             printf("%s <args...>\n", argv[0]);
             printf("--home <path>: specifies the path to the userdata directory\n");
             printf("--game <path>: specifies the path to the gamedata directory\n");
+            printf("-debug: writes diagnostic output to debug.log beside the executable\n");
             printf("--help: prints the usage of the command line arguments\n");
             exit(0);
         }

@@ -10,6 +10,7 @@ target_link_libraries(ninecraft PRIVATE ${CMAKE_DL_LIBS} zlibstatic SDL2::SDL2 S
 
 if(WIN32)
     target_link_libraries(ninecraft PRIVATE iphlpapi)
+    set_target_properties(ninecraft PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
 if(MSVC)

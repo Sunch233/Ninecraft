@@ -55,6 +55,7 @@
 #include <ninecraft/android/android_keycodes.h>
 #include <ninecraft/game_parameters.h>
 #ifdef _WIN32
+#include <ninecraft/debug_log.h>
 #include <ninecraft/device_identity.h>
 #endif
 
@@ -1702,13 +1703,25 @@ int main(int argc, char **argv) {
     app_platform_0_9_0_t *plat = NULL;
     app_context_0_9_0_t *context = NULL;
 
+#ifdef _WIN32
+    if (game_parameters_debug_requested(argc, argv) &&
+        !ninecraft_enable_debug_log()) {
+        MessageBoxW(
+            NULL,
+            L"Unable to create debug.log beside ninecraft.exe.",
+            L"Ninecraft",
+            MB_OK | MB_ICONERROR);
+        return 1;
+    }
+#endif
+
+    parse_game_parameters(argc, argv);
+
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 #ifdef _WIN32
     SetUnhandledExceptionFilter(ninecraft_exception_filter);
 #endif
-
-    parse_game_parameters(argc, argv);
 
     storage_path = (char *)malloc(1024);
     if (!storage_path) {
