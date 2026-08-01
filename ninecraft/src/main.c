@@ -28,6 +28,7 @@
 #include <ninecraft/AppPlatform_linux.h>
 #include <ninecraft/minecraft.h>
 #include <ninecraft/input/keyboard.h>
+#include <ninecraft/input/ime_composition.h>
 #include <ninecraft/input/mouse_device.h>
 #include <ninecraft/input/multitouch.h>
 #include <ninecraft/mods/inject.h>
@@ -70,14 +71,19 @@ AppPlatform_linux platform;
 static unsigned char *controller_states;
 static float *controller_x_stick;
 static float *controller_y_stick;
+static ninecraft_ime_composition_t ime_composition;
 
 typedef void (*mouse_feed_0_14_3_t)(char button, char state, short x, short y, short dx, short dy);
 typedef int (*convert_android_key_0_14_3_t)(int key);
 typedef void (*keyboard_feed_text_0_14_3_t)(const android_string_t *text, bool replace_last);
+typedef void (*minecraft_client_set_textbox_text_0_14_3_t)(
+    void *client,
+    const android_string_t *text);
 
 static mouse_feed_0_14_3_t mouse_feed_0_14_3;
 static convert_android_key_0_14_3_t convert_android_key_0_14_3;
 static keyboard_feed_text_0_14_3_t keyboard_feed_text_0_14_3;
+static minecraft_client_set_textbox_text_0_14_3_t minecraft_client_set_textbox_text_0_14_3;
 
 static void call_mouse_feed_0_14_3(char button, char state, short x, short y, short dx, short dy) {
 #ifdef _WIN32
@@ -112,6 +118,19 @@ static void call_keyboard_feed_text_0_14_3(const android_string_t *text, bool re
         (uintptr_t)(replace_last ? 1 : 0));
 #else
     keyboard_feed_text_0_14_3(text, replace_last);
+#endif
+}
+
+static void call_minecraft_client_set_textbox_text_0_14_3(
+    const android_string_t *text) {
+#ifdef _WIN32
+    ninecraft_call_guest(
+        (void *)minecraft_client_set_textbox_text_0_14_3,
+        2,
+        (uintptr_t)ninecraft_app,
+        (uintptr_t)text);
+#else
+    minecraft_client_set_textbox_text_0_14_3(ninecraft_app, text);
 #endif
 }
 
@@ -857,11 +876,12 @@ static void resize_callback(struct SDL_Window *window, int width, int height) {
 static void char_callback(struct SDL_Window *window, char *codepoint) {
     if (is_keyboard_visible) {
         chat_mod_append_char(codepoint[0]);
-        if (version_id == version_id_0_14_3 && keyboard_feed_text_0_14_3) {
+        if (version_id == version_id_0_14_3 && minecraft_client_set_textbox_text_0_14_3) {
             android_string_t str;
-            android_string_cstr(&str, codepoint);
-            call_keyboard_feed_text_0_14_3(&str, false);
-            android_string_destroy(&str);
+            if (AppPlatform_linux$appendTextBoxText_0_14_3(&str, codepoint)) {
+                call_minecraft_client_set_textbox_text_0_14_3(&str);
+                android_string_destroy(&str);
+            }
         } else if (version_id >= version_id_0_6_0 && version_id <= version_id_0_7_1) {
             keyboard_feed_text_0_6_0(codepoint[0]);
         } else if (version_id >= version_id_0_7_2) {
@@ -887,7 +907,7 @@ void *chat_screen_create() {
     return chat_screen;
 }
 
-static void key_callback(struct SDL_Window *window, int key, int scancode, int action, int mod) {
+static void key_callback(struct SDL_Window *window, int key, int scancode, int action, int mod, int repeat, Uint32 timestamp) {
     int android_key = sdl_to_android_key(key);
     if (action == SDL_KEYDOWN) {
         mod_loader_execute_on_key_pressed(android_key);
@@ -913,19 +933,46 @@ static void key_callback(struct SDL_Window *window, int key, int scancode, int a
             }
         }
         if (version_id == version_id_0_14_3) {
-            int windows_key = convert_android_key_0_14_3 ? call_convert_android_key_0_14_3(android_key) : 0;
+            bool is_return = key == SDLK_RETURN || key == SDLK_KP_ENTER;
+            bool is_backspace = key == SDLK_BACKSPACE;
+
+            if (is_keyboard_visible && (is_return || is_backspace)) {
+                /* Windows has already delivered these keys to the IME by the
+                 * time SDL exposes them.  Do not also send them to Minecraft
+                 * while a candidate is being edited or confirmed. */
+                if (ninecraft_ime_composition_should_consume_control(
+                        &ime_composition,
+                        is_return ? NINECRAFT_IME_CONTROL_RETURN : NINECRAFT_IME_CONTROL_BACKSPACE,
+                        action == SDL_KEYDOWN,
+                        repeat != 0,
+                        timestamp)) {
+                    return;
+                }
+
+                /* The Android EditText sends its full contents after every
+                 * deletion. Mirror that behavior so UTF-8 text and Backspace
+                 * cannot diverge after an IME commit. */
+                if (is_backspace) {
+                    android_string_t text;
+                    if (AppPlatform_linux$backspaceTextBoxText_0_14_3(&text)) {
+                        call_minecraft_client_set_textbox_text_0_14_3(&text);
+                        android_string_destroy(&text);
+                    }
+                } else if (keyboard_feed_text_0_14_3) {
+                    android_string_t control_text;
+                    keyboard_feed(13, 1);
+                    keyboard_feed(13, 0);
+                    android_string_cstr(&control_text, "\n");
+                    call_keyboard_feed_text_0_14_3(&control_text, false);
+                    android_string_destroy(&control_text);
+                }
+                return;
+            }
+
+            int windows_key = key == SDLK_KP_ENTER ? 13 :
+                              (convert_android_key_0_14_3 ? call_convert_android_key_0_14_3(android_key) : 0);
             if (windows_key > 0 && windows_key < 256) {
                 keyboard_feed((unsigned char)windows_key, action == SDL_KEYDOWN ? 1 : 0);
-            }
-            if (action == SDL_KEYDOWN && is_keyboard_visible && keyboard_feed_text_0_14_3 &&
-                (key == SDLK_BACKSPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER)) {
-                android_string_t control_text;
-                /* ChatScreen::handleTextChar sends on LF (0x0a).  CR (0x0d)
-                 * is ordinary text in MCPE 0.14.3 and would be appended to the
-                 * message instead of submitting it. */
-                android_string_cstr(&control_text, key == SDLK_BACKSPACE ? "\b" : "\n");
-                call_keyboard_feed_text_0_14_3(&control_text, false);
-                android_string_destroy(&control_text);
             }
             return;
         }
@@ -1736,6 +1783,14 @@ int main(int argc, char **argv) {
 
     android_linker_init();
 
+#ifdef _WIN32
+    /* SDL's UI-less Windows IME path suppresses the native candidate window,
+     * but its candidate renderer is not implemented.  Keep the system UI so
+     * Chinese/Japanese/Korean composition and suggestions remain visible. */
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
+    SDL_SetHint(SDL_HINT_IME_SUPPORT_EXTENDED_TEXT, "1");
+
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL_Init Error: %s\n", SDL_GetError());
         free(storage_path);
@@ -1858,15 +1913,24 @@ int main(int argc, char **argv) {
         void *http_send;
         void *http_abort;
 
+        /* SDL enables desktop text input by default.  MCPE 0.14.3 expects it
+         * to be active only between AppPlatform::show/hideKeyboard. */
+        SDL_StopTextInput();
+
         mouse_feed_0_14_3 = (mouse_feed_0_14_3_t)android_dlsym(handle, "_ZN5Mouse4feedEccssss");
         convert_android_key_0_14_3 = (convert_android_key_0_14_3_t)android_dlsym(handle, "_Z37convertAndroidKeyCodeToWindowsKeyCodei");
         keyboard_feed_text_0_14_3 = (keyboard_feed_text_0_14_3_t)android_dlsym(handle, "_ZN8Keyboard8feedTextERKSsb");
+        minecraft_client_set_textbox_text_0_14_3 =
+            (minecraft_client_set_textbox_text_0_14_3_t)android_dlsym(
+                handle,
+                "_ZN15MinecraftClient14setTextboxTextERKSs");
         store_create = android_dlsym(handle, "_ZN12AndroidStore21createGooglePlayStoreERKSsR13StoreListener");
         http_construct = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroidC2ER11HTTPRequest");
         http_send = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid4sendEv");
         http_abort = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid5abortEv");
 
         if (!mouse_feed_0_14_3 || !convert_android_key_0_14_3 || !keyboard_feed_text_0_14_3 ||
+            !minecraft_client_set_textbox_text_0_14_3 ||
             !store_create || !http_construct || !http_send || !http_abort ||
             !app_platform_construct || !minecraft_client_construct || !app_init ||
             !minecraft_client_update || !minecraft_client_set_rendering_size ||
@@ -2360,13 +2424,37 @@ int main(int argc, char **argv) {
         audio_engine_tick();
         SDL_GL_SwapWindow(_window);
 
+        if (version_id == version_id_0_14_3 && !is_keyboard_visible) {
+            ninecraft_ime_composition_reset(&ime_composition);
+        }
+
         while (SDL_PollEvent(&event)) {
+            bool is_ime_text_event = event.type == SDL_TEXTINPUT ||
+                                     event.type == SDL_TEXTEDITING ||
+                                     event.type == SDL_TEXTEDITING_EXT;
+            ninecraft_ime_composition_before_event(&ime_composition, is_ime_text_event);
+
             if (event.type == SDL_QUIT) {
                 running = false;
             } else if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
-                key_callback(_window, event.key.keysym.sym, event.key.keysym.scancode, event.type, event.key.keysym.mod);
+                key_callback(_window, event.key.keysym.sym, event.key.keysym.scancode,
+                             event.type, event.key.keysym.mod, event.key.repeat, event.key.timestamp);
             } else if (event.type == SDL_TEXTINPUT) {
+                bool was_composing = ninecraft_ime_composition_is_active(&ime_composition);
                 char_callback(_window, event.text.text);
+                ninecraft_ime_composition_on_text_input(
+                    &ime_composition, was_composing, event.text.timestamp);
+            } else if (event.type == SDL_TEXTEDITING) {
+                ninecraft_ime_composition_on_editing(
+                    &ime_composition, event.edit.text[0] != '\0');
+            } else if (event.type == SDL_TEXTEDITING_EXT) {
+                /* Native IME UI displays composition.  SDL owns the event but
+                 * transfers the extended text buffer to the application. */
+                ninecraft_ime_composition_on_editing(
+                    &ime_composition, event.editExt.text && event.editExt.text[0] != '\0');
+                if (event.editExt.text) {
+                    SDL_free(event.editExt.text);
+                }
             } else if (event.type == SDL_MOUSEMOTION) {
                 mouse_pos_callback(_window, event.motion.x, event.motion.y, event.motion.xrel, event.motion.yrel);
             } else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
@@ -2382,6 +2470,7 @@ int main(int argc, char **argv) {
                 } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
                            event.window.event == SDL_WINDOWEVENT_LEAVE) {
                     *((unsigned char *)plat + 4) = 0;
+                    ninecraft_ime_composition_reset(&ime_composition);
                 }
             }
         }

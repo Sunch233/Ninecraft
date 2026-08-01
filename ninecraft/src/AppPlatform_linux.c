@@ -32,6 +32,200 @@ ninecraft_options_t platform_options = {
     .capasity = 0
 };
 bool is_keyboard_visible = false;
+static char *text_box_text_0_14_3;
+static size_t text_box_text_length_0_14_3;
+static size_t text_box_text_capacity_0_14_3;
+static size_t text_box_text_codepoints_0_14_3;
+static int text_box_max_length_0_14_3;
+static bool text_box_text_initialized_0_14_3;
+
+static bool reserve_text_box_text_0_14_3(size_t required) {
+    char *new_text;
+
+    if (required <= text_box_text_capacity_0_14_3) {
+        return true;
+    }
+
+    new_text = (char *)realloc(text_box_text_0_14_3, required);
+    if (!new_text) {
+        return false;
+    }
+
+    text_box_text_0_14_3 = new_text;
+    text_box_text_capacity_0_14_3 = required;
+    return true;
+}
+
+static bool utf8_sequence_size_0_14_3(
+    const unsigned char *text,
+    size_t remaining,
+    size_t *sequence_size) {
+    size_t width;
+    size_t index;
+    unsigned char lead;
+
+    if (!remaining || !text || !sequence_size) {
+        return false;
+    }
+
+    lead = text[0];
+    if (lead < 0x80) {
+        width = 1;
+    } else if (lead >= 0xc2 && lead <= 0xdf) {
+        width = 2;
+    } else if (lead >= 0xe0 && lead <= 0xef) {
+        width = 3;
+    } else if (lead >= 0xf0 && lead <= 0xf4) {
+        width = 4;
+    } else {
+        return false;
+    }
+
+    if (width > remaining) {
+        return false;
+    }
+    for (index = 1; index < width; ++index) {
+        if ((text[index] & 0xc0) != 0x80) {
+            return false;
+        }
+    }
+
+    /* Reject overlong forms, UTF-16 surrogates, and values above U+10FFFF. */
+    if ((width == 3 && lead == 0xe0 && text[1] < 0xa0) ||
+        (width == 3 && lead == 0xed && text[1] >= 0xa0) ||
+        (width == 4 && lead == 0xf0 && text[1] < 0x90) ||
+        (width == 4 && lead == 0xf4 && text[1] >= 0x90)) {
+        return false;
+    }
+
+    *sequence_size = width;
+    return true;
+}
+
+static bool count_utf8_codepoints_0_14_3(
+    const char *text,
+    size_t length,
+    size_t *count) {
+    size_t offset = 0;
+    size_t result = 0;
+
+    while (offset < length) {
+        size_t sequence_size;
+        if (!utf8_sequence_size_0_14_3(
+                (const unsigned char *)text + offset,
+                length - offset,
+                &sequence_size)) {
+            return false;
+        }
+        offset += sequence_size;
+        ++result;
+    }
+
+    *count = result;
+    return true;
+}
+
+static bool set_text_box_text_0_14_3(const char *text) {
+    size_t length = text ? strlen(text) : 0;
+    size_t codepoints = 0;
+
+    if (length && !count_utf8_codepoints_0_14_3(text, length, &codepoints)) {
+        return false;
+    }
+    if (!reserve_text_box_text_0_14_3(length + 1)) {
+        return false;
+    }
+
+    if (length) {
+        memcpy(text_box_text_0_14_3, text, length);
+    }
+    text_box_text_0_14_3[length] = '\0';
+    text_box_text_length_0_14_3 = length;
+    text_box_text_codepoints_0_14_3 = codepoints;
+    text_box_text_initialized_0_14_3 = true;
+    return true;
+}
+
+bool AppPlatform_linux$appendTextBoxText_0_14_3(
+    android_string_t *ret,
+    const char *committed_text) {
+    size_t committed_length;
+    size_t bytes_to_append = 0;
+    size_t codepoints_to_append = 0;
+    size_t required;
+
+    if (!ret || !committed_text) {
+        return false;
+    }
+    if (!text_box_text_initialized_0_14_3 && !set_text_box_text_0_14_3("")) {
+        return false;
+    }
+
+    committed_length = strlen(committed_text);
+    while (bytes_to_append < committed_length) {
+        size_t sequence_size;
+
+        if (!utf8_sequence_size_0_14_3(
+                (const unsigned char *)committed_text + bytes_to_append,
+                committed_length - bytes_to_append,
+                &sequence_size)) {
+            return false;
+        }
+        if (text_box_max_length_0_14_3 > 0 &&
+            text_box_text_codepoints_0_14_3 + codepoints_to_append >=
+                (size_t)text_box_max_length_0_14_3) {
+            break;
+        }
+
+        bytes_to_append += sequence_size;
+        ++codepoints_to_append;
+    }
+
+    if (bytes_to_append > (size_t)-1 - text_box_text_length_0_14_3 - 1) {
+        return false;
+    }
+    required = text_box_text_length_0_14_3 + bytes_to_append + 1;
+    if (!reserve_text_box_text_0_14_3(required)) {
+        return false;
+    }
+
+    if (bytes_to_append) {
+        memcpy(
+            text_box_text_0_14_3 + text_box_text_length_0_14_3,
+            committed_text,
+            bytes_to_append);
+        text_box_text_length_0_14_3 += bytes_to_append;
+        text_box_text_codepoints_0_14_3 += codepoints_to_append;
+    }
+    text_box_text_0_14_3[text_box_text_length_0_14_3] = '\0';
+    android_string_cstrl(ret, text_box_text_0_14_3, text_box_text_length_0_14_3);
+    return true;
+}
+
+bool AppPlatform_linux$backspaceTextBoxText_0_14_3(android_string_t *ret) {
+    size_t new_length;
+
+    if (!ret || !text_box_text_initialized_0_14_3) {
+        return false;
+    }
+
+    new_length = text_box_text_length_0_14_3;
+    if (new_length) {
+        do {
+            --new_length;
+        } while (new_length &&
+                 (((unsigned char)text_box_text_0_14_3[new_length] & 0xc0) == 0x80));
+
+        text_box_text_0_14_3[new_length] = '\0';
+        text_box_text_length_0_14_3 = new_length;
+        if (text_box_text_codepoints_0_14_3) {
+            --text_box_text_codepoints_0_14_3;
+        }
+    }
+
+    android_string_cstrl(ret, text_box_text_0_14_3, text_box_text_length_0_14_3);
+    return true;
+}
 
 void *app_platform_vtable_0_1_0[] = {
     (void *)AppPlatform_linux$saveScreenshot,
@@ -578,7 +772,10 @@ uint64_t AppPlatform_linux$getTotalMemory(AppPlatform_linux *app_platform) {
 }
 
 void AppPlatform_linux$updateTextBoxText(AppPlatform_linux *app_platform, android_string_t *text) {
-    //puts("debug: AppPlatform_linux::updateTextBoxText");
+    (void)app_platform;
+    if (text_box_text_initialized_0_14_3 && text) {
+        (void)set_text_box_text_0_14_3(android_string_to_str(text));
+    }
 }
 
 bool AppPlatform_linux$hasIDEProfiler(AppPlatform_linux *app_platform) {
@@ -1236,14 +1433,49 @@ void AppPlatform_linux$showKeyboard_0_14_3(
     bool multiline,
     bool numeric,
     const void *caret_position) {
-    (void)text;
-    (void)max_length;
+    SDL_Rect input_rect = { 0, 0, 1, 1 };
+    int window_width = 0;
+    int window_height = 0;
+
     (void)multiline;
     (void)numeric;
-    (void)caret_position;
+
+    text_box_max_length_0_14_3 = max_length;
+    if (!set_text_box_text_0_14_3(text ? android_string_to_str(text) : "")) {
+        fprintf(stderr, "Unable to initialize the MCPE 0.14.3 text-input buffer\n");
+        return;
+    }
+
+    if (_window) {
+        SDL_GetWindowSize(_window, &window_width, &window_height);
+        input_rect.y = window_height > 0 ? window_height - 1 : 0;
+
+        if (caret_position) {
+            const float *caret = (const float *)caret_position;
+            float x = caret[0];
+            float bottom_offset = caret[1];
+
+            if (x >= 0.0f && x < (float)window_width) {
+                input_rect.x = (int)x;
+            }
+            if (bottom_offset >= 0.0f && bottom_offset <= (float)window_height) {
+                int y = window_height - (int)bottom_offset;
+                int max_y = window_height > 0 ? window_height - 1 : 0;
+                input_rect.y = y < 0 ? 0 : (y > max_y ? max_y : y);
+            }
+        }
+        /* Set this once before enabling for platforms that consume the rect at
+         * startup, then again afterwards because Windows restores the HIMC in
+         * SDL_StartTextInput and only then accepts candidate-window placement. */
+        SDL_SetTextInputRect(&input_rect);
+    }
+
     is_keyboard_visible = true;
     *((unsigned char *)app_platform + 5) = 1;
     SDL_StartTextInput();
+    if (_window) {
+        SDL_SetTextInputRect(&input_rect);
+    }
 }
 
 void AppPlatform_linux$showKeyboard2(AppPlatform_linux *app_platform, bool show) {

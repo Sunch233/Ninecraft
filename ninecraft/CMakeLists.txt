@@ -14,4 +14,11 @@ endif()
 
 if(BUILD_TESTING)
     add_test(NAME ninecraft-help COMMAND ninecraft --help)
+
+    add_executable(ninecraft-ime-composition-test
+        tests/ime_composition_test.c
+        src/input/ime_composition.c
+    )
+    target_include_directories(ninecraft-ime-composition-test PRIVATE include/)
+    add_test(NAME ninecraft-ime-composition COMMAND ninecraft-ime-composition-test)
 endif()

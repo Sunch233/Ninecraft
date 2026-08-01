@@ -44,6 +44,13 @@ typedef union {
 extern ninecraft_options_t platform_options;
 extern bool is_keyboard_visible;
 
+/* MCPE 0.14.3 mirrors the Android EditText's complete UTF-8 contents into
+ * MinecraftClient. These helpers maintain that host-side text buffer. */
+bool AppPlatform_linux$appendTextBoxText_0_14_3(
+    android_string_t *ret,
+    const char *committed_text);
+bool AppPlatform_linux$backspaceTextBoxText_0_14_3(android_string_t *ret);
+
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$getDataUrl);
 void AppPlatform_linux$getDataUrl(android_string_t *ret, AppPlatform_linux *app_platform);
 
