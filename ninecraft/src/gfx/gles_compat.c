@@ -1,5 +1,124 @@
 #include <ninecraft/gfx/gles_compat.h>
 
+#include <stdio.h>
+
+static const char *ninecraft_gl_string(GLenum name) {
+    const GLubyte *value;
+    if (!glad_glGetString) {
+        return "<glGetString unavailable>";
+    }
+    value = glad_glGetString(name);
+    return value ? (const char *)value : "<null>";
+}
+
+static void ninecraft_log_gl_procedure(
+    const char *name,
+    GLADapiproc glad_procedure,
+    ninecraft_gl_proc_resolver_t resolver) {
+    void *resolved = resolver ? resolver(name) : NULL;
+    fprintf(
+        stderr,
+        "  %-30s GLAD=%p resolver=%p\n",
+        name,
+        (void *)glad_procedure,
+        resolved);
+}
+
+static void ninecraft_log_precision_format(
+    const char *stage_name,
+    GLenum stage,
+    const char *precision_name,
+    GLenum precision_type) {
+    GLint range[2] = {-1, -1};
+    GLint precision = -1;
+    GLenum error = GL_NO_ERROR;
+
+    if (!glad_glGetShaderPrecisionFormat) {
+        fprintf(
+            stderr,
+            "  %s %-6s: unavailable\n",
+            stage_name,
+            precision_name);
+        return;
+    }
+
+    glGetShaderPrecisionFormat(stage, precision_type, range, &precision);
+    if (glad_glGetError) {
+        error = glGetError();
+    }
+    fprintf(
+        stderr,
+        "  %s %-6s: range=[%d,%d] precision=%d glError=0x%04x\n",
+        stage_name,
+        precision_name,
+        range[0],
+        range[1],
+        precision,
+        (unsigned int)error);
+}
+
+void ninecraft_gles_log_diagnostics(
+    int glad_version,
+    ninecraft_gl_proc_resolver_t resolver) {
+    fprintf(stderr, "\n========== OpenGL diagnostics ==========\n");
+    fprintf(
+        stderr,
+        "GLAD load result: %d (OpenGL %d.%d)\n",
+        glad_version,
+        glad_version ? GLAD_VERSION_MAJOR(glad_version) : 0,
+        glad_version ? GLAD_VERSION_MINOR(glad_version) : 0);
+    fprintf(stderr, "GL_VENDOR: %s\n", ninecraft_gl_string(GL_VENDOR));
+    fprintf(stderr, "GL_RENDERER: %s\n", ninecraft_gl_string(GL_RENDERER));
+    fprintf(stderr, "GL_VERSION: %s\n", ninecraft_gl_string(GL_VERSION));
+    fprintf(
+        stderr,
+        "GL_SHADING_LANGUAGE_VERSION: %s\n",
+        ninecraft_gl_string(GL_SHADING_LANGUAGE_VERSION));
+    fprintf(stderr, "GL_EXTENSIONS: %s\n", ninecraft_gl_string(GL_EXTENSIONS));
+    fprintf(
+        stderr,
+        "GLAD flags: GL_VERSION_2_0=%d ARB_ES2_compatibility=%d "
+        "ARB_framebuffer_object=%d EXT_framebuffer_object=%d\n",
+        GLAD_GL_VERSION_2_0,
+        GLAD_GL_ARB_ES2_compatibility,
+        GLAD_GL_ARB_framebuffer_object,
+        GLAD_GL_EXT_framebuffer_object);
+
+    fprintf(stderr, "Critical entry points:\n");
+#define NINECRAFT_LOG_GL_PROC(name) \
+    ninecraft_log_gl_procedure(      \
+        #name,                       \
+        (GLADapiproc)glad_##name,    \
+        resolver)
+    NINECRAFT_LOG_GL_PROC(glCreateShader);
+    NINECRAFT_LOG_GL_PROC(glCreateProgram);
+    NINECRAFT_LOG_GL_PROC(glShaderSource);
+    NINECRAFT_LOG_GL_PROC(glCompileShader);
+    NINECRAFT_LOG_GL_PROC(glLinkProgram);
+    NINECRAFT_LOG_GL_PROC(glUseProgram);
+    NINECRAFT_LOG_GL_PROC(glGetShaderPrecisionFormat);
+    NINECRAFT_LOG_GL_PROC(glReleaseShaderCompiler);
+    NINECRAFT_LOG_GL_PROC(glBindFramebuffer);
+    NINECRAFT_LOG_GL_PROC(glBindFramebufferEXT);
+    NINECRAFT_LOG_GL_PROC(glGenFramebuffers);
+    NINECRAFT_LOG_GL_PROC(glGenFramebuffersEXT);
+    NINECRAFT_LOG_GL_PROC(glFramebufferTexture2D);
+    NINECRAFT_LOG_GL_PROC(glFramebufferTexture2DEXT);
+    NINECRAFT_LOG_GL_PROC(glCheckFramebufferStatus);
+    NINECRAFT_LOG_GL_PROC(glCheckFramebufferStatusEXT);
+#undef NINECRAFT_LOG_GL_PROC
+
+    fprintf(stderr, "Shader precision formats:\n");
+    ninecraft_log_precision_format("vertex  ", GL_VERTEX_SHADER, "low", GL_LOW_FLOAT);
+    ninecraft_log_precision_format("vertex  ", GL_VERTEX_SHADER, "medium", GL_MEDIUM_FLOAT);
+    ninecraft_log_precision_format("vertex  ", GL_VERTEX_SHADER, "high", GL_HIGH_FLOAT);
+    ninecraft_log_precision_format("fragment", GL_FRAGMENT_SHADER, "low", GL_LOW_FLOAT);
+    ninecraft_log_precision_format("fragment", GL_FRAGMENT_SHADER, "medium", GL_MEDIUM_FLOAT);
+    ninecraft_log_precision_format("fragment", GL_FRAGMENT_SHADER, "high", GL_HIGH_FLOAT);
+    fprintf(stderr, "========================================\n\n");
+    fflush(stderr);
+}
+
 FLOAT_ABI_FIX void gl_alpha_func(GLenum func, GLclampf ref) {
     glAlphaFunc(func, ref);
 }

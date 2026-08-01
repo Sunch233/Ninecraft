@@ -4,6 +4,13 @@
 #include <glad/gl.h>
 #include <ancmp/abi_fix.h>
 
+typedef void *(*ninecraft_gl_proc_resolver_t)(const char *name);
+
+/* Logs the driver, precision formats, extensions and critical entry points. */
+extern void ninecraft_gles_log_diagnostics(
+    int glad_version,
+    ninecraft_gl_proc_resolver_t resolver);
+
 // Function documentation
 // https://registry.khronos.org/OpenGL-Refpages/es1.1/xhtml/
 

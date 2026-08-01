@@ -140,21 +140,6 @@ static void call_minecraft_client_set_textbox_text_0_14_3(
 
 bool mouse_pointer_hidden = false;
 
-#ifdef _WIN32
-static LONG WINAPI ninecraft_exception_filter(EXCEPTION_POINTERS *exception) {
-    void *address = exception->ExceptionRecord->ExceptionAddress;
-    android_Dl_info info;
-    fprintf(stderr, "Unhandled exception 0x%08lx at %p\n",
-            exception->ExceptionRecord->ExceptionCode, address);
-    if (android_dladdr(address, &info) && info.dli_fbase) {
-        fprintf(stderr, "ELF address: %s+0x%lx\n",
-                info.dli_fname ? info.dli_fname : "<unknown>",
-                (unsigned long)((uintptr_t)address - (uintptr_t)info.dli_fbase));
-    }
-    return EXCEPTION_EXECUTE_HANDLER;
-}
-#endif
-
 void *load_library(const char *name, bool show_error) {
 #if defined(__i386__) || defined(_M_IX86)
     char *arch = "x86";
@@ -1705,7 +1690,7 @@ int main(int argc, char **argv) {
     void *icon_pixels;
     app_platform_0_9_0_t *plat = NULL;
     app_context_0_9_0_t *context = NULL;
-
+    int glad_version = 0;
 #ifdef _WIN32
     if (game_parameters_debug_requested(argc, argv) &&
         !ninecraft_enable_debug_log()) {
@@ -1723,7 +1708,8 @@ int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 #ifdef _WIN32
-    SetUnhandledExceptionFilter(ninecraft_exception_filter);
+    ninecraft_install_crash_handler();
+    ninecraft_crash_set_phase("initializing paths and options");
 #endif
 
     storage_path = (char *)malloc(1024);
@@ -1810,6 +1796,9 @@ int main(int argc, char **argv) {
 #endif
     SDL_SetHint(SDL_HINT_IME_SUPPORT_EXTENDED_TEXT, "1");
 
+#ifdef _WIN32
+    ninecraft_crash_set_phase("initializing SDL video");
+#endif
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL_Init Error: %s\n", SDL_GetError());
         free(storage_path);
@@ -1827,6 +1816,9 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
+#ifdef _WIN32
+    ninecraft_crash_set_phase("creating the SDL OpenGL window");
+#endif
     _window = SDL_CreateWindow(
         "Ninecraft 0.14.3 By Sunch233",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -1859,6 +1851,9 @@ int main(int argc, char **argv) {
         stbi_image_free(icon_pixels);
     }
 
+#ifdef _WIN32
+    ninecraft_crash_set_phase("creating the OpenGL context");
+#endif
     gl_context = SDL_GL_CreateContext(_window);
     if (!gl_context) {
         printf("SDL_GL_CreateContext Error: %s\n", SDL_GetError());
@@ -1872,8 +1867,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress);
+#ifdef _WIN32
+    ninecraft_crash_set_phase("loading OpenGL entry points");
+#endif
+    glad_version = gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress);
+    if (game_parameters.debug_logging) {
+        ninecraft_gles_log_diagnostics(
+            glad_version,
+            (ninecraft_gl_proc_resolver_t)SDL_GL_GetProcAddress);
+    }
 
+#ifdef _WIN32
+    ninecraft_crash_set_phase("initializing audio and GLES hooks");
+#endif
     audio_engine_init();
 
     gles_hook();
@@ -1897,6 +1903,9 @@ int main(int argc, char **argv) {
     so_libopensles = android_library_create("libOpenSLES.so");
     so_libz = android_library_create("libz.so");
 
+#ifdef _WIN32
+    ninecraft_crash_set_phase("loading MCPE shared libraries");
+#endif
     so_libgnustl_shared = load_library("libgnustl_shared.so", false);
     so_libfmod = load_library("libfmod.so", false);
     add_custom_hook("FMOD_System_Create", (void *)ninecraft_fmod_system_create_disabled);
@@ -2260,6 +2269,7 @@ int main(int argc, char **argv) {
         }
 #endif
 #ifdef _WIN32
+        ninecraft_crash_set_phase("MCPE App::init on the guest stack");
         call_with_custom_stack(app_init, NULL, 1024 * 1024, 2, ninecraft_app, context);
 #else
         app_init(ninecraft_app, context);
@@ -2454,6 +2464,7 @@ int main(int argc, char **argv) {
         }
 
 #ifdef _WIN32
+        ninecraft_crash_set_phase("MCPE client update on the guest stack");
         if (version_id == version_id_0_14_3) {
             call_with_custom_stack(minecraft_client_update, NULL, 1024 * 1024, 1, ninecraft_app);
         } else if (version_id >= version_id_0_10_0) {
@@ -2470,6 +2481,10 @@ int main(int argc, char **argv) {
             ninecraft_app_update(ninecraft_app);
         }
 #endif
+
+#ifdef _WIN32
+        ninecraft_crash_set_phase("executing update mods and swapping OpenGL buffers");
+#endif
         mod_loader_execute_on_minecraft_update(ninecraft_app, version_id);
 
         audio_engine_tick();
@@ -2479,6 +2494,9 @@ int main(int argc, char **argv) {
             ninecraft_ime_composition_reset(&ime_composition);
         }
 
+#ifdef _WIN32
+        ninecraft_crash_set_phase("processing SDL input and window events");
+#endif
         while (SDL_PollEvent(&event)) {
             bool is_ime_text_event = event.type == SDL_TEXTINPUT ||
                                      event.type == SDL_TEXTEDITING ||
