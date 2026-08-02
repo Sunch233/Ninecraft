@@ -1993,6 +1993,7 @@ int main(int argc, char **argv) {
         } else {
             fprintf(stderr, "  fps_limit=false\n");
         }
+        fprintf(stderr, "Detected system RAM: %d MiB\n", SDL_GetSystemRAM());
     }
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);

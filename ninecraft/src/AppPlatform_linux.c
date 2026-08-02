@@ -787,14 +787,29 @@ void AppPlatform_linux$getBroadcastAddresses(android_vector_t *ret, AppPlatform_
     *ret = out;
 }
 
+static uint64_t get_system_memory_bytes(void) {
+    int system_ram_mib;
+
+    system_ram_mib = SDL_GetSystemRAM();
+    if (system_ram_mib > 0) {
+        /* MCPE 0.14.3 selects its built-in render-distance table from this
+         * value.  Android reports total physical memory here; the previous
+         * fixed 575 MiB value restricted every host to at most five levels. */
+        return (uint64_t)(unsigned int)system_ram_mib * 1024u * 1024u;
+    }
+
+    /* Preserve the previous behavior if SDL cannot determine system RAM. */
+    return (uint64_t)120586240u * 5u;
+}
+
 uint64_t AppPlatform_linux$getAvailableMemory(AppPlatform_linux *app_platform) {
-    //puts("debug: AppPlatform_linux::getAvailableMemory");
-    return 120586240 * 5;
+    (void)app_platform;
+    return get_system_memory_bytes();
 }
 
 uint64_t AppPlatform_linux$getTotalMemory(AppPlatform_linux *app_platform) {
-    //puts("debug: AppPlatform_linux::getTotalMemory");
-    return 1024 * 1024 * 1024;
+    (void)app_platform;
+    return get_system_memory_bytes();
 }
 
 void AppPlatform_linux$updateTextBoxText(AppPlatform_linux *app_platform, android_string_t *text) {

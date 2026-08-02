@@ -140,6 +140,14 @@ Set `fps_limit=false` to leave the frame rate uncapped, or set it to an integer
 from 1 to 1000, such as `fps_limit=60`. VSync, driver settings or insufficient
 performance may still produce a lower frame rate.
 
+### Render distance selection
+
+Minecraft 0.14.3 selects its built-in render-distance levels from the total
+physical memory reported by the platform. Ninecraft reports the RAM detected
+by SDL instead of the old fixed 575 MiB value. Systems with more than 2300 MiB
+therefore receive the native six-level list (`8, 10, 12, 14, 18, 22` chunks),
+while lower-memory systems retain the game's original conservative lists.
+
 Restart Ninecraft after changing an option. With `-debug`, the selected values,
 shader path, swap-interval result and FPS-limiter state are written to
 `debug.log`.
