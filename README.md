@@ -121,6 +121,7 @@ previous behavior:
 force_gles_translation=false
 disable_vsync=false
 windows10_ui=false
+touch_mode=false
 fps_limit=false
 ```
 
@@ -136,9 +137,30 @@ Set `windows10_ui=true` to use the Windows 10 edition start menu, desktop
 screen layouts and centered desktop HUD in Minecraft 0.14.3. Leave it `false`
 to retain the original Pocket Edition interface.
 
+Set `touch_mode=true` in Minecraft 0.14.3 to keep the system cursor unlocked
+and send the left mouse button through the game's native single-touch path.
+Clicks, holds and drags then behave like touchscreen input. Right click,
+middle click and the mouse wheel are ignored in this mode.
+
 Set `fps_limit=false` to leave the frame rate uncapped, or set it to an integer
 from 1 to 1000, such as `fps_limit=60`. VSync, driver settings or insufficient
 performance may still produce a lower frame rate.
+
+### Alt touch-mouse mode
+
+In Minecraft 0.14.3 gameplay, hold **Left Alt** while the mouse is captured to
+temporarily release the cursor. The left mouse button is then sent through the
+game's native single-touch path, so clicks, holds and drags behave like a
+touchscreen. Release Left Alt to return to normal mouse-look; if a touch opened
+a menu, that menu remains in control of whether the cursor is captured.
+
+Right Alt is unchanged. Right click, middle click and the mouse wheel are
+ignored while this temporary touch mode is active so they cannot switch the
+game back to mouse input in the middle of a touch.
+
+This temporary Left Alt behavior is used when `touch_mode=false`. When
+`touch_mode=true`, the cursor stays released and touch-style input remains
+active without holding Alt.
 
 ### Render distance selection
 

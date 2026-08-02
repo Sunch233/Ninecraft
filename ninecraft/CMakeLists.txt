@@ -42,4 +42,23 @@ if(BUILD_TESTING)
     add_test(
         NAME ninecraft-runtime-config
         COMMAND ninecraft-runtime-config-test)
+
+    add_executable(
+        ninecraft-alt-mouse-mode-test
+        tests/alt_mouse_mode_test.c
+        src/input/alt_mouse_mode.c)
+    target_include_directories(
+        ninecraft-alt-mouse-mode-test
+        PRIVATE include/)
+    set_target_properties(
+        ninecraft-alt-mouse-mode-test
+        PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY
+            "${CMAKE_CURRENT_BINARY_DIR}/alt-mouse-mode-test-bin/$<CONFIG>")
+    if(MSVC)
+        target_compile_options(ninecraft-alt-mouse-mode-test PRIVATE /utf-8)
+    endif()
+    add_test(
+        NAME ninecraft-alt-mouse-mode
+        COMMAND ninecraft-alt-mouse-mode-test)
 endif()

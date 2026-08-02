@@ -72,20 +72,15 @@ static int file_contains(const char *path, const char *needle) {
     return found;
 }
 
-static int write_test_config(const char *path) {
-    static const char contents[] =
-        "force_gles_translation=true\n"
-        "disable_vsync=on\n"
-        "windows10_ui=1\n"
-        "fps_limit=60\n";
+static int write_test_config(const char *path, const char *contents) {
     SDL_RWops *stream = SDL_RWFromFile(path, "wb");
     int success;
+    size_t length = strlen(contents);
 
     if (!stream) {
         return 0;
     }
-    success = SDL_RWwrite(stream, contents, 1, sizeof(contents) - 1) ==
-              sizeof(contents) - 1;
+    success = SDL_RWwrite(stream, contents, 1, length) == length;
     return SDL_RWclose(stream) == 0 && success;
 }
 
@@ -104,12 +99,20 @@ int main(void) {
         goto cleanup;
     }
     if (ninecraft_runtime_config.windows10_ui ||
-        !file_contains(config_path, "windows10_ui=false")) {
-        fprintf(stderr, "The default Windows 10 UI setting is invalid.\n");
+        ninecraft_runtime_config.touch_mode ||
+        !file_contains(config_path, "windows10_ui=false") ||
+        !file_contains(config_path, "touch_mode=false")) {
+        fprintf(stderr, "The default runtime settings are invalid.\n");
         goto cleanup;
     }
 
-    if (!write_test_config(config_path) ||
+    if (!write_test_config(
+            config_path,
+            "force_gles_translation=true\n"
+            "disable_vsync=on\n"
+            "windows10_ui=1\n"
+            "touch_mode=true\n"
+            "fps_limit=60\n") ||
         !ninecraft_runtime_config_load()) {
         fprintf(stderr, "Unable to load the test configuration.\n");
         goto cleanup;
@@ -117,8 +120,23 @@ int main(void) {
     if (!ninecraft_runtime_config.force_gles_translation ||
         !ninecraft_runtime_config.disable_vsync ||
         !ninecraft_runtime_config.windows10_ui ||
+        !ninecraft_runtime_config.touch_mode ||
         ninecraft_runtime_config.fps_limit != 60) {
         fprintf(stderr, "Parsed runtime settings do not match the test data.\n");
+        goto cleanup;
+    }
+
+    if (!write_test_config(config_path, "touch_mode=false\n") ||
+        !ninecraft_runtime_config_load() ||
+        ninecraft_runtime_config.touch_mode) {
+        fprintf(stderr, "touch_mode=false was not parsed correctly.\n");
+        goto cleanup;
+    }
+
+    if (!write_test_config(config_path, "touch_mode=invalid\n") ||
+        !ninecraft_runtime_config_load() ||
+        ninecraft_runtime_config.touch_mode) {
+        fprintf(stderr, "An invalid touch_mode value did not retain the default.\n");
         goto cleanup;
     }
 

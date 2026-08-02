@@ -7,6 +7,7 @@ typedef struct {
     bool force_gles_translation;
     bool disable_vsync;
     bool windows10_ui;
+    bool touch_mode;
     unsigned int fps_limit;
 } ninecraft_runtime_config_t;
 

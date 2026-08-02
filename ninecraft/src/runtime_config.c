@@ -13,6 +13,7 @@ ninecraft_runtime_config_t ninecraft_runtime_config = {
     false,
     false,
     false,
+    false,
     0
 };
 
@@ -28,6 +29,8 @@ static const char ninecraft_default_config[] =
     "disable_vsync=false\r\n"
     "# Use the Windows 10 desktop menus, screen layouts and centered HUD.\r\n"
     "windows10_ui=false\r\n"
+    "# Keep the cursor unlocked and route the left mouse button as touch input.\r\n"
+    "touch_mode=false\r\n"
     "# Use false for unlimited FPS, or an integer from 1 to 1000.\r\n"
     "fps_limit=false\r\n";
 
@@ -163,6 +166,8 @@ static void ninecraft_config_parse(char *contents, size_t length) {
             target = &ninecraft_runtime_config.disable_vsync;
         } else if (!SDL_strcasecmp(key, "windows10_ui")) {
             target = &ninecraft_runtime_config.windows10_ui;
+        } else if (!SDL_strcasecmp(key, "touch_mode")) {
+            target = &ninecraft_runtime_config.touch_mode;
         } else if (!SDL_strcasecmp(key, "fps_limit")) {
             unsigned int parsed_fps_limit;
             if (!ninecraft_config_parse_fps_limit(value, &parsed_fps_limit)) {
@@ -253,6 +258,7 @@ bool ninecraft_runtime_config_load(void) {
     ninecraft_runtime_config.force_gles_translation = false;
     ninecraft_runtime_config.disable_vsync = false;
     ninecraft_runtime_config.windows10_ui = false;
+    ninecraft_runtime_config.touch_mode = false;
     ninecraft_runtime_config.fps_limit = 0;
 
     SDL_free(ninecraft_config_path);

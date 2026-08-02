@@ -28,6 +28,7 @@
 #include <ninecraft/AppPlatform_linux.h>
 #include <ninecraft/minecraft.h>
 #include <ninecraft/input/keyboard.h>
+#include <ninecraft/input/alt_mouse_mode.h>
 #include <ninecraft/input/ime_composition.h>
 #include <ninecraft/input/mouse_device.h>
 #include <ninecraft/input/multitouch.h>
@@ -79,6 +80,10 @@ static unsigned char *controller_states;
 static float *controller_x_stick;
 static float *controller_y_stick;
 static ninecraft_ime_composition_t ime_composition;
+static ninecraft_alt_mouse_mode_t alt_mouse_mode;
+static short alt_mouse_x;
+static short alt_mouse_y;
+static unsigned int mouse_buttons_forwarded_0_14_3;
 
 typedef struct {
     unsigned int fps_limit;
@@ -154,6 +159,7 @@ static void ninecraft_frame_limiter_wait(
 }
 
 typedef void (*mouse_feed_0_14_3_t)(char button, char state, short x, short y, short dx, short dy);
+typedef void (*multitouch_feed_0_14_3_t)(char button, char state, short x, short y, int pointer_id);
 typedef int (*convert_android_key_0_14_3_t)(int key);
 typedef void (*keyboard_feed_text_0_14_3_t)(const android_string_t *text, bool replace_last);
 typedef void (*minecraft_client_set_textbox_text_0_14_3_t)(
@@ -161,6 +167,7 @@ typedef void (*minecraft_client_set_textbox_text_0_14_3_t)(
     const android_string_t *text);
 
 static mouse_feed_0_14_3_t mouse_feed_0_14_3;
+static multitouch_feed_0_14_3_t multitouch_feed_0_14_3;
 static convert_android_key_0_14_3_t convert_android_key_0_14_3;
 static keyboard_feed_text_0_14_3_t keyboard_feed_text_0_14_3;
 static minecraft_client_set_textbox_text_0_14_3_t minecraft_client_set_textbox_text_0_14_3;
@@ -178,6 +185,26 @@ static void call_mouse_feed_0_14_3(char button, char state, short x, short y, sh
         (uintptr_t)(unsigned short)dy);
 #else
     mouse_feed_0_14_3(button, state, x, y, dx, dy);
+#endif
+}
+
+static void call_multitouch_feed_0_14_3(
+    char button,
+    char state,
+    short x,
+    short y,
+    int pointer_id) {
+#ifdef _WIN32
+    ninecraft_call_guest(
+        (void *)multitouch_feed_0_14_3,
+        5,
+        (uintptr_t)(unsigned char)button,
+        (uintptr_t)(unsigned char)state,
+        (uintptr_t)(unsigned short)x,
+        (uintptr_t)(unsigned short)y,
+        (uintptr_t)pointer_id);
+#else
+    multitouch_feed_0_14_3(button, state, x, y, pointer_id);
 #endif
 }
 
@@ -215,6 +242,70 @@ static void call_minecraft_client_set_textbox_text_0_14_3(
 }
 
 bool mouse_pointer_hidden = false;
+
+static bool alt_mouse_intercepts_pointer(void) {
+    return alt_mouse_mode.touch_mode || alt_mouse_mode.alt_active ||
+           alt_mouse_mode.restore_phase != NINECRAFT_ALT_MOUSE_RESTORE_NONE;
+}
+
+static void set_host_mouse_capture(bool capture) {
+    if (mouse_pointer_hidden == capture) {
+        return;
+    }
+
+    mouse_pointer_hidden = capture;
+    if (capture) {
+        SDL_ShowCursor(SDL_DISABLE);
+        SDL_SetRelativeMouseMode(SDL_TRUE);
+        SDL_SetWindowGrab(_window, SDL_TRUE);
+    } else {
+        SDL_ShowCursor(SDL_ENABLE);
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        SDL_SetWindowGrab(_window, SDL_FALSE);
+    }
+}
+
+static void apply_alt_mouse_actions(
+    unsigned int actions,
+    short x,
+    short y) {
+    alt_mouse_x = x;
+    alt_mouse_y = y;
+
+    if ((actions & NINECRAFT_ALT_MOUSE_ACTION_TOUCH_PRESS) &&
+        multitouch_feed_0_14_3) {
+        call_multitouch_feed_0_14_3(1, 1, x, y, 0);
+        if (SDL_CaptureMouse(SDL_TRUE) < 0 &&
+            game_parameters.debug_logging) {
+            fprintf(
+                stderr,
+                "Unable to capture touch drag outside the window: %s\n",
+                SDL_GetError());
+        }
+    }
+    if ((actions & NINECRAFT_ALT_MOUSE_ACTION_TOUCH_MOVE) &&
+        multitouch_feed_0_14_3) {
+        call_multitouch_feed_0_14_3(0, 0, x, y, 0);
+    }
+    if (actions & NINECRAFT_ALT_MOUSE_ACTION_TOUCH_RELEASE) {
+        if (multitouch_feed_0_14_3) {
+            call_multitouch_feed_0_14_3(1, 0, x, y, 0);
+        }
+        SDL_CaptureMouse(SDL_FALSE);
+    }
+    if ((actions & NINECRAFT_ALT_MOUSE_ACTION_FEED_MOUSE_ABSOLUTE) &&
+        mouse_feed_0_14_3) {
+        /* MouseMapper consumes this on the following guest update and lets
+         * the active screen decide whether the cursor should be captured. */
+        call_mouse_feed_0_14_3(0, 0, x, y, 0, 0);
+    }
+    if (actions & NINECRAFT_ALT_MOUSE_ACTION_RELEASE_CURSOR) {
+        set_host_mouse_capture(false);
+    }
+    if (actions & NINECRAFT_ALT_MOUSE_ACTION_GRAB_CURSOR) {
+        set_host_mouse_capture(true);
+    }
+}
 
 static void ninecraft_report_so_integrity_failure(
     const ninecraft_so_integrity_failure_t *failure) {
@@ -367,15 +458,88 @@ int mouseToGameKeyCode(int keyCode) {
     return 0;
 }
 
+static unsigned int mouse_button_mask_0_14_3(int button) {
+    if (button < 1 || button > 3) {
+        return 0;
+    }
+    return 1u << (unsigned int)(button - 1);
+}
+
+static void feed_mouse_button_0_14_3(
+    int button,
+    int pressed,
+    short x,
+    short y) {
+    unsigned int mask;
+
+    if (!mouse_feed_0_14_3) {
+        return;
+    }
+
+    mask = mouse_button_mask_0_14_3(button);
+    if (pressed) {
+        mouse_buttons_forwarded_0_14_3 |= mask;
+    } else {
+        mouse_buttons_forwarded_0_14_3 &= ~mask;
+    }
+    call_mouse_feed_0_14_3(
+        (char)button,
+        (char)(pressed ? 1 : 0),
+        x,
+        y,
+        0,
+        0);
+}
+
+static void release_forwarded_mouse_buttons_0_14_3(
+    short x,
+    short y) {
+    unsigned int buttons = mouse_buttons_forwarded_0_14_3;
+
+    if (buttons & mouse_button_mask_0_14_3(1)) {
+        feed_mouse_button_0_14_3(1, 0, x, y);
+    }
+    if (buttons & mouse_button_mask_0_14_3(2)) {
+        feed_mouse_button_0_14_3(2, 0, x, y);
+    }
+    if (buttons & mouse_button_mask_0_14_3(3)) {
+        feed_mouse_button_0_14_3(3, 0, x, y);
+    }
+}
+
 static void mouse_click_callback(struct SDL_Window *window, int button, int action, int x, int y) {
     if (version_id == version_id_0_14_3) {
+        unsigned int alt_actions = NINECRAFT_ALT_MOUSE_ACTION_NONE;
         int mc_button = button == SDL_BUTTON_LEFT ? 1 :
                         button == SDL_BUTTON_RIGHT ? 2 :
                         button == SDL_BUTTON_MIDDLE ? 3 : 0;
+
+        alt_mouse_x = (short)x;
+        alt_mouse_y = (short)y;
+        if (button == SDL_BUTTON_LEFT) {
+            alt_actions = ninecraft_alt_mouse_mode_left_button(
+                &alt_mouse_mode,
+                action == SDL_PRESSED);
+            apply_alt_mouse_actions(
+                alt_actions,
+                alt_mouse_x,
+                alt_mouse_y);
+            if (alt_actions & NINECRAFT_ALT_MOUSE_ACTION_CONSUME) {
+                return;
+            }
+        }
+        if (alt_mouse_intercepts_pointer()) {
+            /* Touch has no right/middle-button or wheel equivalent.  Do not
+             * let MouseMapper switch modes while touch routing is active or
+             * an Alt-mode restore is still draining. */
+            return;
+        }
         if (mouse_feed_0_14_3 && mc_button) {
-            call_mouse_feed_0_14_3((char)mc_button,
-                                   (char)(action == SDL_PRESSED ? 1 : 0),
-                                   (short)x, (short)y, 0, 0);
+            feed_mouse_button_0_14_3(
+                mc_button,
+                action == SDL_PRESSED,
+                (short)x,
+                (short)y);
         }
         return;
     }
@@ -412,6 +576,10 @@ static void mouse_scroll_callback(struct SDL_Window *window, float xoffset, floa
         int x;
         int y;
         int amount = (int)roundf(offset * 127.0f);
+
+        if (alt_mouse_intercepts_pointer()) {
+            return;
+        }
         if (amount > 127) {
             amount = 127;
         } else if (amount < -128) {
@@ -435,6 +603,16 @@ static void mouse_scroll_callback(struct SDL_Window *window, float xoffset, floa
 
 static void mouse_pos_callback(struct SDL_Window *window, int xpos, int ypos, int xrel, int yrel) {
     if (version_id == version_id_0_14_3) {
+        unsigned int alt_actions;
+
+        alt_mouse_x = (short)xpos;
+        alt_mouse_y = (short)ypos;
+        alt_actions = ninecraft_alt_mouse_mode_motion(&alt_mouse_mode);
+        apply_alt_mouse_actions(alt_actions, alt_mouse_x, alt_mouse_y);
+        if ((alt_actions & NINECRAFT_ALT_MOUSE_ACTION_CONSUME) ||
+            alt_mouse_intercepts_pointer()) {
+            return;
+        }
         if (mouse_feed_0_14_3) {
             /* MouseMapper treats non-zero deltas as camera input and does not
              * update the UI pointer.  Menus need absolute pointer events;
@@ -1049,6 +1227,32 @@ static void key_callback(struct SDL_Window *window, int key, int scancode, int a
     } else if (action == SDL_KEYUP) {
         mod_loader_execute_on_key_released(android_key);
     }
+    if (version_id == version_id_0_14_3 && key == SDLK_LALT) {
+        int mouse_x;
+        int mouse_y;
+        bool was_active = alt_mouse_mode.alt_active != 0;
+        unsigned int alt_actions = ninecraft_alt_mouse_mode_left_alt(
+            &alt_mouse_mode,
+            action == SDL_KEYDOWN);
+
+        SDL_GetMouseState(&mouse_x, &mouse_y);
+        alt_mouse_x = (short)mouse_x;
+        alt_mouse_y = (short)mouse_y;
+        if (!was_active && alt_mouse_mode.alt_active) {
+            /* A normal mouse action may already be held when Alt is pressed.
+             * Release it before switching to the independent touch pointer. */
+            release_forwarded_mouse_buttons_0_14_3(
+                alt_mouse_x,
+                alt_mouse_y);
+        }
+        apply_alt_mouse_actions(
+            alt_actions,
+            alt_mouse_x,
+            alt_mouse_y);
+        if (alt_actions & NINECRAFT_ALT_MOUSE_ACTION_CONSUME) {
+            return;
+        }
+    }
     if (key == SDLK_F11) {
         if (action == SDL_KEYDOWN) {
             if (is_fullscreen) {
@@ -1336,20 +1540,42 @@ static void key_callback(struct SDL_Window *window, int key, int scancode, int a
 }
 
 void grab_mouse() {
+    int x;
+    int y;
+    unsigned int actions;
+
     puts("grab_mouse");
-    mouse_pointer_hidden = true;
-    SDL_ShowCursor(SDL_DISABLE);
-    SDL_SetRelativeMouseMode(true);
-    SDL_SetWindowGrab(_window, true);
+    if (version_id != version_id_0_14_3) {
+        mouse_pointer_hidden = true;
+        SDL_ShowCursor(SDL_DISABLE);
+        SDL_SetRelativeMouseMode(SDL_TRUE);
+        SDL_SetWindowGrab(_window, SDL_TRUE);
+        mod_loader_execute_on_minecraft_grab_mouse(ninecraft_app, version_id);
+        return;
+    }
+    SDL_GetMouseState(&x, &y);
+    actions = ninecraft_alt_mouse_mode_request_capture(&alt_mouse_mode);
+    apply_alt_mouse_actions(actions, (short)x, (short)y);
     mod_loader_execute_on_minecraft_grab_mouse(ninecraft_app, version_id);
 }
 
 void release_mouse() {
+    int x;
+    int y;
+    unsigned int actions;
+
     puts("release_mouse");
-    mouse_pointer_hidden = false;
-    SDL_ShowCursor(SDL_ENABLE);
-    SDL_SetRelativeMouseMode(false);
-    SDL_SetWindowGrab(_window, false);
+    if (version_id != version_id_0_14_3) {
+        mouse_pointer_hidden = false;
+        SDL_ShowCursor(SDL_ENABLE);
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        SDL_SetWindowGrab(_window, SDL_FALSE);
+        mod_loader_execute_on_minecraft_release_mouse(ninecraft_app, version_id);
+        return;
+    }
+    SDL_GetMouseState(&x, &y);
+    actions = ninecraft_alt_mouse_mode_request_release(&alt_mouse_mode);
+    apply_alt_mouse_actions(actions, (short)x, (short)y);
     mod_loader_execute_on_minecraft_release_mouse(ninecraft_app, version_id);
 }
 
@@ -1842,6 +2068,8 @@ int main(int argc, char **argv) {
     app_context_0_9_0_t *context = NULL;
     int glad_version = 0;
     ninecraft_frame_limiter_t frame_limiter;
+
+    ninecraft_alt_mouse_mode_init(&alt_mouse_mode, 1);
 #ifdef _WIN32
     if (game_parameters_debug_requested(argc, argv) &&
         !ninecraft_enable_debug_log()) {
@@ -1972,6 +2200,9 @@ int main(int argc, char **argv) {
             "Unable to load %s; using default runtime settings.\n",
             ninecraft_runtime_config_path());
     }
+    (void)ninecraft_alt_mouse_mode_set_touch_mode(
+        &alt_mouse_mode,
+        ninecraft_runtime_config.touch_mode);
     ninecraft_gles_set_force_translation(
         ninecraft_runtime_config.force_gles_translation);
     if (game_parameters.debug_logging) {
@@ -1980,11 +2211,13 @@ int main(int argc, char **argv) {
             "Runtime configuration: %s\n"
             "  force_gles_translation=%d\n"
             "  disable_vsync=%d\n"
-            "  windows10_ui=%d\n",
+            "  windows10_ui=%d\n"
+            "  touch_mode=%d\n",
             ninecraft_runtime_config_path(),
             ninecraft_runtime_config.force_gles_translation ? 1 : 0,
             ninecraft_runtime_config.disable_vsync ? 1 : 0,
-            ninecraft_runtime_config.windows10_ui ? 1 : 0);
+            ninecraft_runtime_config.windows10_ui ? 1 : 0,
+            ninecraft_runtime_config.touch_mode ? 1 : 0);
         if (ninecraft_runtime_config.fps_limit) {
             fprintf(
                 stderr,
@@ -2201,6 +2434,9 @@ int main(int argc, char **argv) {
         SDL_StopTextInput();
 
         mouse_feed_0_14_3 = (mouse_feed_0_14_3_t)android_dlsym(handle, "_ZN5Mouse4feedEccssss");
+        multitouch_feed_0_14_3 = (multitouch_feed_0_14_3_t)android_dlsym(
+            handle,
+            "_ZN10Multitouch4feedEccssi");
         convert_android_key_0_14_3 = (convert_android_key_0_14_3_t)android_dlsym(handle, "_Z37convertAndroidKeyCodeToWindowsKeyCodei");
         keyboard_feed_text_0_14_3 = (keyboard_feed_text_0_14_3_t)android_dlsym(handle, "_ZN8Keyboard8feedTextERKSsb");
         minecraft_client_set_textbox_text_0_14_3 =
@@ -2212,7 +2448,8 @@ int main(int argc, char **argv) {
         http_send = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid4sendEv");
         http_abort = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid5abortEv");
 
-        if (!mouse_feed_0_14_3 || !convert_android_key_0_14_3 || !keyboard_feed_text_0_14_3 ||
+        if (!mouse_feed_0_14_3 || !multitouch_feed_0_14_3 ||
+            !convert_android_key_0_14_3 || !keyboard_feed_text_0_14_3 ||
             !minecraft_client_set_textbox_text_0_14_3 ||
             !store_create || !http_construct || !http_send || !http_abort ||
             !app_platform_construct || !minecraft_client_construct || !app_init ||
@@ -2744,6 +2981,19 @@ int main(int argc, char **argv) {
         }
 #endif
 
+        if (version_id == version_id_0_14_3) {
+            int mouse_x;
+            int mouse_y;
+            unsigned int alt_actions =
+                ninecraft_alt_mouse_mode_after_guest_update(&alt_mouse_mode);
+
+            SDL_GetMouseState(&mouse_x, &mouse_y);
+            apply_alt_mouse_actions(
+                alt_actions,
+                (short)mouse_x,
+                (short)mouse_y);
+        }
+
 #ifdef _WIN32
         ninecraft_crash_set_phase("executing update mods and swapping OpenGL buffers");
 #endif
@@ -2767,6 +3017,17 @@ int main(int argc, char **argv) {
             ninecraft_ime_composition_before_event(&ime_composition, is_ime_text_event);
 
             if (event.type == SDL_QUIT) {
+                if (version_id == version_id_0_14_3) {
+                    unsigned int alt_actions =
+                        ninecraft_alt_mouse_mode_focus(&alt_mouse_mode, 0);
+                    release_forwarded_mouse_buttons_0_14_3(
+                        alt_mouse_x,
+                        alt_mouse_y);
+                    apply_alt_mouse_actions(
+                        alt_actions,
+                        alt_mouse_x,
+                        alt_mouse_y);
+                }
                 running = false;
             } else if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
                 key_callback(_window, event.key.keysym.sym, event.key.keysym.scancode,
@@ -2796,11 +3057,43 @@ int main(int argc, char **argv) {
             } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 resize_callback(_window, event.window.data1, event.window.data2);
             } else if (version_id == version_id_0_14_3 && plat && event.type == SDL_WINDOWEVENT) {
-                if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED ||
-                    event.window.event == SDL_WINDOWEVENT_ENTER) {
+                if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                    const Uint8 *keyboard_state = SDL_GetKeyboardState(NULL);
+                    unsigned int alt_actions;
+
+                    if (alt_mouse_mode.left_alt_down &&
+                        !keyboard_state[SDL_SCANCODE_LALT]) {
+                        alt_actions = ninecraft_alt_mouse_mode_left_alt(
+                            &alt_mouse_mode,
+                            0);
+                        apply_alt_mouse_actions(
+                            alt_actions,
+                            alt_mouse_x,
+                            alt_mouse_y);
+                    }
+                    alt_actions = ninecraft_alt_mouse_mode_focus(
+                        &alt_mouse_mode,
+                        1);
+                    apply_alt_mouse_actions(
+                        alt_actions,
+                        alt_mouse_x,
+                        alt_mouse_y);
                     *((unsigned char *)plat + 4) = 1;
-                } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
-                           event.window.event == SDL_WINDOWEVENT_LEAVE) {
+                } else if (event.window.event == SDL_WINDOWEVENT_ENTER) {
+                    *((unsigned char *)plat + 4) = 1;
+                } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    unsigned int alt_actions =
+                        ninecraft_alt_mouse_mode_focus(&alt_mouse_mode, 0);
+                    release_forwarded_mouse_buttons_0_14_3(
+                        alt_mouse_x,
+                        alt_mouse_y);
+                    apply_alt_mouse_actions(
+                        alt_actions,
+                        alt_mouse_x,
+                        alt_mouse_y);
+                    *((unsigned char *)plat + 4) = 0;
+                    ninecraft_ime_composition_reset(&ime_composition);
+                } else if (event.window.event == SDL_WINDOWEVENT_LEAVE) {
                     *((unsigned char *)plat + 4) = 0;
                     ninecraft_ime_composition_reset(&ime_composition);
                 }
