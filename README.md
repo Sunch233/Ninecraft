@@ -111,7 +111,7 @@ ctest --test-dir build-msvc-win32 -C Release --output-on-failure
 ```
 For the XP build, replace `build-msvc-win32` with `build-msvc-v141xp`.
 
-### Launcher graphics configuration
+### Launcher runtime configuration
 
 On the first normal launch, Ninecraft attempts to create `ninecraft.ini`
 beside the executable. All settings default to `false`, preserving the
@@ -120,6 +120,7 @@ previous behavior:
 ```ini
 force_gles_translation=false
 disable_vsync=false
+windows10_ui=false
 fps_limit=false
 ```
 
@@ -130,6 +131,10 @@ requires desktop GLSL 1.20 support.
 
 Set `disable_vsync=true` to request swap interval 0 after the OpenGL context is
 created. A graphics-driver control panel may still override this request.
+
+Set `windows10_ui=true` to use the Windows 10 edition start menu, desktop
+screen layouts and centered desktop HUD in Minecraft 0.14.3. Leave it `false`
+to retain the original Pocket Edition interface.
 
 Set `fps_limit=false` to leave the frame rate uncapped, or set it to an integer
 from 1 to 1000, such as `fps_limit=60`. VSync, driver settings or insufficient

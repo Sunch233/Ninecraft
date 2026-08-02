@@ -1387,6 +1387,8 @@ static void configure_app_platform_0_14_3(app_platform_0_9_0_t *plat) {
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_VIBRATE] = (void *)AppPlatform_linux$vibrate;
     /* 0.14 returns std::string here (not the older {data,size} AssetFile). */
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_READ_ASSET_FILE] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$readAssetFile_0_9_0);
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_USE_CENTERED_GUI] = (void *)AppPlatform_linux$useCenteredGUI;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_SCREEN_TYPE] = (void *)AppPlatform_linux$getScreenType;
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_APPLICATION_ID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getApplicationId);
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_AVAILABLE_MEMORY] = (void *)AppPlatform_linux$getAvailableMemory;
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_BROADCAST_ADDRESSES] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getBroadcastAddresses);
@@ -1396,6 +1398,7 @@ static void configure_app_platform_0_14_3(app_platform_0_9_0_t *plat) {
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_IS_FIRST_SNOOP_LAUNCH] = (void *)AppPlatform_linux$isFirstSnoopLaunch;
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_HAS_HARDWARE_INFORMATION_CHANGED] = (void *)AppPlatform_linux$hasHardwareInformationChanged;
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_IS_TABLET] = (void *)AppPlatform_linux$isTablet;
+    platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_EDITION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getEdition);
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_PLATFORM_TEMP_PATH] = (void *)AppPlatform_linux$getPlatformTempPath;
 }
 
@@ -1966,7 +1969,7 @@ int main(int argc, char **argv) {
     if (!ninecraft_runtime_config_load()) {
         fprintf(
             stderr,
-            "Unable to load %s; using default graphics settings.\n",
+            "Unable to load %s; using default runtime settings.\n",
             ninecraft_runtime_config_path());
     }
     ninecraft_gles_set_force_translation(
@@ -1976,10 +1979,12 @@ int main(int argc, char **argv) {
             stderr,
             "Runtime configuration: %s\n"
             "  force_gles_translation=%d\n"
-            "  disable_vsync=%d\n",
+            "  disable_vsync=%d\n"
+            "  windows10_ui=%d\n",
             ninecraft_runtime_config_path(),
             ninecraft_runtime_config.force_gles_translation ? 1 : 0,
-            ninecraft_runtime_config.disable_vsync ? 1 : 0);
+            ninecraft_runtime_config.disable_vsync ? 1 : 0,
+            ninecraft_runtime_config.windows10_ui ? 1 : 0);
         if (ninecraft_runtime_config.fps_limit) {
             fprintf(
                 stderr,

@@ -12,18 +12,22 @@
 ninecraft_runtime_config_t ninecraft_runtime_config = {
     false,
     false,
+    false,
     0
 };
 
 static char *ninecraft_config_path;
 
 static const char ninecraft_default_config[] =
-    "# Ninecraft graphics configuration.\r\n"
+    "# Ninecraft runtime configuration.\r\n"
     "# Change a setting and restart the game.\r\n"
+    "# find update in: https://www.axe.ink/ninecraft/joingroup.html.\r\n\r\n"
     "# Ignore native GLES 1.00 support and translate shaders to desktop GLSL 1.20.\r\n"
     "force_gles_translation=false\r\n"
     "# Request swap interval 0 after the OpenGL context is created.\r\n"
     "disable_vsync=false\r\n"
+    "# Use the Windows 10 desktop menus, screen layouts and centered HUD.\r\n"
+    "windows10_ui=false\r\n"
     "# Use false for unlimited FPS, or an integer from 1 to 1000.\r\n"
     "fps_limit=false\r\n";
 
@@ -157,6 +161,8 @@ static void ninecraft_config_parse(char *contents, size_t length) {
             target = &ninecraft_runtime_config.force_gles_translation;
         } else if (!SDL_strcasecmp(key, "disable_vsync")) {
             target = &ninecraft_runtime_config.disable_vsync;
+        } else if (!SDL_strcasecmp(key, "windows10_ui")) {
+            target = &ninecraft_runtime_config.windows10_ui;
         } else if (!SDL_strcasecmp(key, "fps_limit")) {
             unsigned int parsed_fps_limit;
             if (!ninecraft_config_parse_fps_limit(value, &parsed_fps_limit)) {
@@ -246,6 +252,7 @@ bool ninecraft_runtime_config_load(void) {
 
     ninecraft_runtime_config.force_gles_translation = false;
     ninecraft_runtime_config.disable_vsync = false;
+    ninecraft_runtime_config.windows10_ui = false;
     ninecraft_runtime_config.fps_limit = 0;
 
     SDL_free(ninecraft_config_path);

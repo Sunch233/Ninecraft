@@ -11,6 +11,7 @@
 #include <ninecraft/utils.h>
 #include <stb_image.h>
 #include <ninecraft/gfx/gles_compat.h>
+#include <ninecraft/runtime_config.h>
 #include <SDL.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -742,6 +743,26 @@ SYSV_WRAPPER(AppPlatform_linux$getModelName, 2)
 void AppPlatform_linux$getModelName(android_string_t *ret, AppPlatform_linux *app_platform) {
     //puts("debug: AppPlatform_linux::getModelName");
     android_string_cstr(ret, "Linux");
+}
+
+bool AppPlatform_linux$useCenteredGUI(AppPlatform_linux *app_platform) {
+    (void)app_platform;
+    return ninecraft_runtime_config.windows10_ui;
+}
+
+int AppPlatform_linux$getScreenType(AppPlatform_linux *app_platform) {
+    (void)app_platform;
+    return ninecraft_runtime_config.windows10_ui ? 0 : 1;
+}
+
+SYSV_WRAPPER(AppPlatform_linux$getEdition, 2)
+void AppPlatform_linux$getEdition(
+    android_string_t *ret,
+    AppPlatform_linux *app_platform) {
+    (void)app_platform;
+    android_string_cstr(
+        ret,
+        ninecraft_runtime_config.windows10_ui ? "win10" : "pocket");
 }
 
 void AppPlatform_linux$captureScreen(AppPlatform_linux *app_platform, int width, int height, bool do_capture) {

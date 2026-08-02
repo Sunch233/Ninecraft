@@ -20,4 +20,26 @@ endif()
 
 if(BUILD_TESTING)
     add_test(NAME ninecraft-help COMMAND ninecraft --help)
+
+    add_executable(
+        ninecraft-runtime-config-test
+        tests/runtime_config_test.c
+        src/runtime_config.c)
+    target_include_directories(
+        ninecraft-runtime-config-test
+        PRIVATE include/)
+    target_link_libraries(
+        ninecraft-runtime-config-test
+        PRIVATE SDL2::SDL2)
+    set_target_properties(
+        ninecraft-runtime-config-test
+        PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY
+            "${CMAKE_CURRENT_BINARY_DIR}/runtime-config-test-bin/$<CONFIG>")
+    if(MSVC)
+        target_compile_options(ninecraft-runtime-config-test PRIVATE /utf-8)
+    endif()
+    add_test(
+        NAME ninecraft-runtime-config
+        COMMAND ninecraft-runtime-config-test)
 endif()
