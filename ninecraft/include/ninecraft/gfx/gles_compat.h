@@ -6,6 +6,9 @@
 
 typedef void *(*ninecraft_gl_proc_resolver_t)(const char *name);
 
+/* Forces GLES 1.00 shaders through the desktop GLSL 1.20 translator. */
+extern void ninecraft_gles_set_force_translation(int force);
+
 /* Logs the driver, precision formats, extensions and critical entry points. */
 extern void ninecraft_gles_log_diagnostics(
     int glad_version,

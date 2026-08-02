@@ -111,6 +111,34 @@ ctest --test-dir build-msvc-win32 -C Release --output-on-failure
 ```
 For the XP build, replace `build-msvc-win32` with `build-msvc-v141xp`.
 
+### Launcher graphics configuration
+
+On the first normal launch, Ninecraft attempts to create `ninecraft.ini`
+beside the executable. All settings default to `false`, preserving the
+previous behavior:
+
+```ini
+force_gles_translation=false
+disable_vsync=false
+fps_limit=false
+```
+
+Set `force_gles_translation=true` to ignore native GLSL ES 1.00 support such
+as `GL_ARB_ES2_compatibility` and use the desktop GLSL 1.20 translator. This
+can work around shader precision problems in older graphics drivers and
+requires desktop GLSL 1.20 support.
+
+Set `disable_vsync=true` to request swap interval 0 after the OpenGL context is
+created. A graphics-driver control panel may still override this request.
+
+Set `fps_limit=false` to leave the frame rate uncapped, or set it to an integer
+from 1 to 1000, such as `fps_limit=60`. VSync, driver settings or insufficient
+performance may still produce a lower frame rate.
+
+Restart Ninecraft after changing an option. With `-debug`, the selected values,
+shader path, swap-interval result and FPS-limiter state are written to
+`debug.log`.
+
 ## Compiling on Linux
 ### x86_64 & x86:
 ```

@@ -56,6 +56,7 @@
 #include <ninecraft/ninecraft_store.h>
 #include <ninecraft/android/android_keycodes.h>
 #include <ninecraft/game_parameters.h>
+#include <ninecraft/runtime_config.h>
 #ifdef _WIN32
 #include <ninecraft/debug_log.h>
 #include <ninecraft/device_identity.h>
@@ -78,6 +79,79 @@ static unsigned char *controller_states;
 static float *controller_x_stick;
 static float *controller_y_stick;
 static ninecraft_ime_composition_t ime_composition;
+
+typedef struct {
+    unsigned int fps_limit;
+    Uint64 performance_frequency;
+    Uint64 interval_ticks;
+    Uint64 interval_remainder;
+    Uint64 remainder_accumulator;
+    Uint64 next_deadline;
+} ninecraft_frame_limiter_t;
+
+static bool ninecraft_frame_limiter_init(
+    ninecraft_frame_limiter_t *limiter,
+    unsigned int fps_limit) {
+    memset(limiter, 0, sizeof(*limiter));
+    if (!fps_limit) {
+        return true;
+    }
+
+    limiter->performance_frequency = SDL_GetPerformanceFrequency();
+    if (!limiter->performance_frequency ||
+        limiter->performance_frequency < (Uint64)fps_limit) {
+        return false;
+    }
+    limiter->fps_limit = fps_limit;
+    limiter->interval_ticks =
+        limiter->performance_frequency / (Uint64)fps_limit;
+    limiter->interval_remainder =
+        limiter->performance_frequency % (Uint64)fps_limit;
+    limiter->next_deadline = SDL_GetPerformanceCounter();
+    return true;
+}
+
+static void ninecraft_frame_limiter_wait(
+    ninecraft_frame_limiter_t *limiter) {
+    Uint64 step;
+    Uint64 now;
+
+    if (!limiter->fps_limit) {
+        return;
+    }
+
+    step = limiter->interval_ticks;
+    limiter->remainder_accumulator += limiter->interval_remainder;
+    if (limiter->remainder_accumulator >= limiter->fps_limit) {
+        step += limiter->remainder_accumulator / limiter->fps_limit;
+        limiter->remainder_accumulator %= limiter->fps_limit;
+    }
+    limiter->next_deadline += step;
+
+    now = SDL_GetPerformanceCounter();
+    if (now >= limiter->next_deadline) {
+        if (now - limiter->next_deadline >= step) {
+            limiter->next_deadline = now;
+            limiter->remainder_accumulator = 0;
+        }
+        return;
+    }
+
+    do {
+        Uint64 remaining = limiter->next_deadline - now;
+        double remaining_ms =
+            (double)remaining * 1000.0 /
+            (double)limiter->performance_frequency;
+
+        if (remaining_ms >= 1.0) {
+            Uint32 delay_ms = (Uint32)remaining_ms;
+            SDL_Delay(delay_ms ? delay_ms : 1);
+        } else {
+            SDL_Delay(0);
+        }
+        now = SDL_GetPerformanceCounter();
+    } while (now < limiter->next_deadline);
+}
 
 typedef void (*mouse_feed_0_14_3_t)(char button, char state, short x, short y, short dx, short dy);
 typedef int (*convert_android_key_0_14_3_t)(int key);
@@ -1764,6 +1838,7 @@ int main(int argc, char **argv) {
     app_platform_0_9_0_t *plat = NULL;
     app_context_0_9_0_t *context = NULL;
     int glad_version = 0;
+    ninecraft_frame_limiter_t frame_limiter;
 #ifdef _WIN32
     if (game_parameters_debug_requested(argc, argv) &&
         !ninecraft_enable_debug_log()) {
@@ -1885,6 +1960,36 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+#ifdef _WIN32
+    ninecraft_crash_set_phase("loading ninecraft.ini");
+#endif
+    if (!ninecraft_runtime_config_load()) {
+        fprintf(
+            stderr,
+            "Unable to load %s; using default graphics settings.\n",
+            ninecraft_runtime_config_path());
+    }
+    ninecraft_gles_set_force_translation(
+        ninecraft_runtime_config.force_gles_translation);
+    if (game_parameters.debug_logging) {
+        fprintf(
+            stderr,
+            "Runtime configuration: %s\n"
+            "  force_gles_translation=%d\n"
+            "  disable_vsync=%d\n",
+            ninecraft_runtime_config_path(),
+            ninecraft_runtime_config.force_gles_translation ? 1 : 0,
+            ninecraft_runtime_config.disable_vsync ? 1 : 0);
+        if (ninecraft_runtime_config.fps_limit) {
+            fprintf(
+                stderr,
+                "  fps_limit=%u\n",
+                ninecraft_runtime_config.fps_limit);
+        } else {
+            fprintf(stderr, "  fps_limit=false\n");
+        }
+    }
+
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -1941,6 +2046,28 @@ int main(int argc, char **argv) {
         free(ovc_path);
         free(icon_path);
         return 1;
+    }
+
+#ifdef _WIN32
+    ninecraft_crash_set_phase("configuring the OpenGL swap interval");
+#endif
+    if (ninecraft_runtime_config.disable_vsync) {
+        SDL_ClearError();
+        if (SDL_GL_SetSwapInterval(0) < 0) {
+            fprintf(
+                stderr,
+                "Unable to disable vertical synchronization: %s\n",
+                SDL_GetError());
+        } else if (game_parameters.debug_logging) {
+            fprintf(
+                stderr,
+                "Disable-VSync request accepted; SDL swap interval=%d.\n",
+                SDL_GL_GetSwapInterval());
+        }
+    } else if (game_parameters.debug_logging) {
+        fprintf(
+            stderr,
+            "Vertical synchronization left unchanged (disable_vsync=false).\n");
     }
 
 #ifdef _WIN32
@@ -2550,6 +2677,24 @@ int main(int argc, char **argv) {
         minecraft_isgrabbed_offset = MINECRAFT_ISGRABBED_OFFSET_0_1_0;
     }
     
+    if (!ninecraft_frame_limiter_init(
+            &frame_limiter,
+            ninecraft_runtime_config.fps_limit)) {
+        fprintf(
+            stderr,
+            "Unable to initialize the %u FPS limiter; running uncapped.\n",
+            ninecraft_runtime_config.fps_limit);
+    } else if (game_parameters.debug_logging) {
+        if (frame_limiter.fps_limit) {
+            fprintf(
+                stderr,
+                "FPS limiter enabled: %u FPS.\n",
+                frame_limiter.fps_limit);
+        } else {
+            fprintf(stderr, "FPS limiter disabled.\n");
+        }
+    }
+
     while (running) {
         if (version_id <= version_id_0_11_1) {
             if (((bool *)ninecraft_app)[minecraft_isgrabbed_offset]) {
@@ -2654,6 +2799,12 @@ int main(int argc, char **argv) {
                     ninecraft_ime_composition_reset(&ime_composition);
                 }
             }
+        }
+        if (running && frame_limiter.fps_limit) {
+#ifdef _WIN32
+            ninecraft_crash_set_phase("waiting for the FPS limiter");
+#endif
+            ninecraft_frame_limiter_wait(&frame_limiter);
         }
     }
     audio_engine_destroy();

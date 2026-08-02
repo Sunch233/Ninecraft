@@ -13,6 +13,8 @@ enum ninecraft_preprocessor_state {
     NINECRAFT_PREPROCESSOR_OTHER
 };
 
+static int ninecraft_force_gles_translation;
+
 /*
  * openGL ES => openGL转译层
  *
@@ -413,14 +415,20 @@ static int ninecraft_driver_supports_glsl_120(void) {
         GL_SHADING_LANGUAGE_VERSION, 1, 20);
 }
 
+void ninecraft_gles_set_force_translation(int force) {
+    ninecraft_force_gles_translation = force != 0;
+}
+
 static int ninecraft_driver_accepts_gles_100_shaders(void) {
-    return GLAD_GL_ARB_ES2_compatibility ||
-           ninecraft_gl_string_version_at_least(GL_VERSION, 4, 1);
+    return !ninecraft_force_gles_translation &&
+           (GLAD_GL_ARB_ES2_compatibility ||
+            ninecraft_gl_string_version_at_least(GL_VERSION, 4, 1));
 }
 
 static int ninecraft_should_translate_gles_100_shaders(void) {
-    return !ninecraft_driver_accepts_gles_100_shaders() &&
-           ninecraft_driver_supports_glsl_120();
+    return ninecraft_force_gles_translation ||
+           (!ninecraft_driver_accepts_gles_100_shaders() &&
+            ninecraft_driver_supports_glsl_120());
 }
 
 static char *ninecraft_join_shader_source(
@@ -557,11 +565,15 @@ void ninecraft_gles_log_diagnostics(
     fprintf(
         stderr,
         "GLSL ES 1.00 handling: %s\n",
-        ninecraft_driver_accepts_gles_100_shaders()
-            ? "native driver path"
-            : (ninecraft_driver_supports_glsl_120()
-                   ? "automatic GLSL 1.20 translation"
-                   : "unsupported (desktop GLSL 1.20 is required)"));
+        ninecraft_force_gles_translation
+            ? (ninecraft_driver_supports_glsl_120()
+                   ? "forced GLSL 1.20 translation (ninecraft.ini)"
+                   : "forced translation unavailable (desktop GLSL 1.20 is required)")
+            : (ninecraft_driver_accepts_gles_100_shaders()
+                   ? "native driver path"
+                   : (ninecraft_driver_supports_glsl_120()
+                          ? "automatic GLSL 1.20 translation"
+                          : "unsupported (desktop GLSL 1.20 is required)")));
 
     fprintf(stderr, "Critical entry points:\n");
 #define NINECRAFT_LOG_GL_PROC(name) \
