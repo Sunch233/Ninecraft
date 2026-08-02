@@ -49,6 +49,11 @@ typedef struct {
     void *addr;
 } android_symbol_t;
 
+typedef int (*android_library_validator_t)(
+    const char *path,
+    int file_descriptor,
+    void *context);
+
 struct link_map
 {
     uintptr_t l_addr;
@@ -226,6 +231,12 @@ int android_dl_iterate_phdr(int (*cb)(struct dl_phdr_info *, size_t, void *), vo
 #endif
 
 void android_linker_init(void);
+
+/* Installs an optional same-file-descriptor validation callback.  It runs
+ * after a disk library is opened and before any ELF bytes are consumed. */
+void android_linker_set_library_validator(
+    android_library_validator_t validator,
+    void *context);
 
 struct soinfo *android_library_create(const char *name);
 

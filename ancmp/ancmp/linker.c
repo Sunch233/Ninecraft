@@ -34,6 +34,7 @@
 #include <direct.h>
 #include <io.h>
 #include <process.h>
+#include <share.h>
 #else
 #include <sys/mman.h>
 #include <unistd.h>
@@ -119,6 +120,9 @@ static char ldpreloads_buf[LDPRELOAD_BUFSIZE];
 static const char *ldpreload_names[LDPRELOAD_MAX + 1];
 
 static soinfo *preloads[LDPRELOAD_MAX + 1];
+
+static android_library_validator_t library_validator;
+static void *library_validator_context;
 
 #if LINKER_DEBUG
 int debug_verbosity;
@@ -622,6 +626,19 @@ static const char *sopaths[] = {
 static int _open_lib(const char *name)
 {
     int fd;
+#ifdef _WIN32
+    if (library_validator) {
+        if (_sopen_s(
+                &fd,
+                name,
+                _O_RDONLY | _O_BINARY,
+                _SH_DENYWR,
+                0) == 0) {
+            return fd;
+        }
+        return -1;
+    }
+#endif
     #if 0
     struct stat filestat;
     if ((stat(name, &filestat) >= 0) && S_ISREG(filestat.st_mode)) {
@@ -1179,6 +1196,12 @@ load_library(const char *name)
     if(fd == -1) {
         DL_ERR("Library '%s' not found", name);
         return NULL;
+    }
+
+    if (library_validator &&
+        !library_validator(name, fd, library_validator_context)) {
+        DL_ERR("Library '%s' rejected by validator", name);
+        goto fail;
     }
 
     /* We have to read the ELF header to figure out what to do with this image
@@ -2184,6 +2207,13 @@ void android_linker_init(void) {
 }
 
 static unsigned stub_bucket = 0;
+
+void android_linker_set_library_validator(
+    android_library_validator_t validator,
+    void *context) {
+    library_validator = validator;
+    library_validator_context = context;
+}
 
 struct soinfo *android_library_create(const char *name) {
     struct soinfo *so = alloc_info(name);

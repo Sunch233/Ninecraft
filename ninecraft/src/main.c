@@ -40,6 +40,7 @@
 #include <ninecraft/audio/sles.h>
 #include <ninecraft/audio/audio_engine.h>
 #include <ninecraft/audio/fmod_compat.h>
+#include <ninecraft/so_integrity.h>
 #include <zlib.h>
 #include <ancmp/android_stat.h>
 #include <ancmp/android_io.h>
@@ -141,6 +142,51 @@ static void call_minecraft_client_set_textbox_text_0_14_3(
 
 bool mouse_pointer_hidden = false;
 
+static void ninecraft_report_so_integrity_failure(
+    const ninecraft_so_integrity_failure_t *failure) {
+    char message[768];
+    const char *reason;
+
+    if (!failure) {
+        return;
+    }
+    reason = ninecraft_so_integrity_result_string(failure->result);
+    if (failure->result == NINECRAFT_SO_INTEGRITY_MISMATCH) {
+        snprintf(
+            message,
+            sizeof(message),
+            "SO integrity verification failed.\n\n"
+            "File: %s\n"
+            "Reason: %s\n"
+            "Expected MD5: %s\n"
+            "Actual MD5:   %s\n\n"
+            "Ninecraft will not start.",
+            failure->library_name,
+            reason,
+            failure->expected_md5,
+            failure->actual_md5);
+    } else {
+        snprintf(
+            message,
+            sizeof(message),
+            "SO integrity verification failed.\n\n"
+            "File: %s\n"
+            "Reason: %s\n\n"
+            "Ninecraft will not start.",
+            failure->library_name,
+            reason);
+    }
+
+    fprintf(stderr, "%s\n", message);
+#ifdef _WIN32
+    MessageBoxA(
+        NULL,
+        message,
+        "Ninecraft - SO integrity verification",
+        MB_OK | MB_ICONERROR);
+#endif
+}
+
 void *load_library(const char *name, bool show_error) {
 #if defined(__i386__) || defined(_M_IX86)
     char *arch = "x86";
@@ -159,10 +205,40 @@ void *load_library(const char *name, bool show_error) {
     strcat(fullpath, "/");
     strcat(fullpath, name);
 
-    void *handle = android_dlopen(fullpath, ANDROID_RTLD_LAZY);
+    void *handle;
+    ninecraft_so_integrity_failure_t integrity_failure;
+
+    ninecraft_so_integrity_reset_failure();
+    handle = android_dlopen(fullpath, ANDROID_RTLD_LAZY);
     if (handle == NULL) {
-        if (show_error) {
-            printf("failed to load library %s: %s\n", fullpath, android_dlerror());
+        if (ninecraft_so_integrity_get_failure(&integrity_failure)) {
+            ninecraft_report_so_integrity_failure(&integrity_failure);
+        } else if (show_error) {
+            const char *loader_error = android_dlerror();
+            fprintf(
+                stderr,
+                "failed to load library %s: %s\n",
+                fullpath,
+                loader_error ? loader_error : "unknown loader error");
+#ifdef _WIN32
+            {
+                char message[1536];
+                snprintf(
+                    message,
+                    sizeof(message),
+                    "Unable to load the required SO file.\n\n"
+                    "File: %s\n"
+                    "Loader error: %s\n\n"
+                    "Ninecraft will not start.",
+                    fullpath,
+                    loader_error ? loader_error : "unknown loader error");
+                MessageBoxA(
+                    NULL,
+                    message,
+                    "Ninecraft - SO loading failed",
+                    MB_OK | MB_ICONERROR);
+            }
+#endif
         }
         free(fullpath);
         return NULL;
@@ -1784,6 +1860,9 @@ int main(int argc, char **argv) {
     ninecraft_set_default_options(&platform_options, ovc_path);
 
     android_linker_init();
+    android_linker_set_library_validator(
+        ninecraft_so_integrity_loader_callback,
+        NULL);
 
 #ifdef _WIN32
     /* SDL's UI-less Windows IME path suppresses the native candidate window,
@@ -1916,8 +1995,26 @@ int main(int argc, char **argv) {
 #ifdef _WIN32
     ninecraft_crash_set_phase("loading MCPE shared libraries");
 #endif
-    so_libgnustl_shared = load_library("libgnustl_shared.so", false);
-    so_libfmod = load_library("libfmod.so", false);
+    so_libgnustl_shared = load_library("libgnustl_shared.so", true);
+    if (!so_libgnustl_shared) {
+        puts("Required SO failed to load: libgnustl_shared.so");
+        free(storage_path);
+        free(mods_path);
+        free(global_overrides_path);
+        free(ovc_path);
+        free(icon_path);
+        return 1;
+    }
+    so_libfmod = load_library("libfmod.so", true);
+    if (!so_libfmod) {
+        puts("Required SO failed to load: libfmod.so");
+        free(storage_path);
+        free(mods_path);
+        free(global_overrides_path);
+        free(ovc_path);
+        free(icon_path);
+        return 1;
+    }
     if (!sles_ready || !ninecraft_fmod_install(so_libfmod)) {
         add_custom_hook(
             "FMOD_System_Create",
