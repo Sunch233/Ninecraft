@@ -26,6 +26,10 @@ void ninecraft_store_delete(void *ninecraft_store);
 
 bool ninecraft_store_allows_query_purchases_on_startup(void *ninecraft_store);
 
+bool ninecraft_store_requires_restore_purchases_button(void *ninecraft_store);
+
+bool ninecraft_store_allows_subscriptions(void *ninecraft_store);
+
 EXTERN_SYSV_WRAPPER(ninecraft_store_get_store_id);
 void ninecraft_store_get_store_id(android_string_t *ret, void *ninecraft_store);
 
@@ -33,13 +37,27 @@ void ninecraft_store_query_products(void *ninecraft_store, android_vector_t *pro
 
 void ninecraft_store_purchase(void *ninecraft_store, android_string_gnu_t *name);
 
+void ninecraft_store_purchase_0_15_6(void *ninecraft_store,
+                                     void *product_id,
+                                     int product_type,
+                                     android_string_gnu_t *payload);
+
+void ninecraft_store_acknowledge_purchase(void *ninecraft_store,
+                                          void *purchase_info,
+                                          int product_type);
+
 void ninecraft_store_query_purchases(void *ninecraft_store);
+
+void ninecraft_store_restore_purchases(void *ninecraft_store);
 
 bool ninecraft_store_is_trial(void *ninecraft_store);
 
 void ninecraft_store_purchase_game(void *ninecraft_store);
 
 bool ninecraft_store_is_game_licensed(void *ninecraft_store);
+
+EXTERN_SYSV_WRAPPER(ninecraft_store_get_app_receipt);
+void ninecraft_store_get_app_receipt(android_string_t *ret, void *ninecraft_store);
 
 void ninecraft_store_register_license_change_callback(void *ninecraft_store, void *callback);
 

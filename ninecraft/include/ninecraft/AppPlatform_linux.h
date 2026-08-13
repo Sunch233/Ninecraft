@@ -54,6 +54,9 @@ bool AppPlatform_linux$backspaceTextBoxText_0_14_3(android_string_t *ret);
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$getDataUrl);
 void AppPlatform_linux$getDataUrl(android_string_t *ret, AppPlatform_linux *app_platform);
 
+EXTERN_SYSV_WRAPPER(AppPlatform_linux$getPackagePath);
+void AppPlatform_linux$getPackagePath(android_string_t *ret, AppPlatform_linux *app_platform);
+
 void AppPlatform_linux$saveImage(AppPlatform_linux *app_platform, android_string_t *resource_path, android_string_t *pixels, int width, int height);
 
 void AppPlatform_linux$swapBuffers(AppPlatform_linux *app_platform);

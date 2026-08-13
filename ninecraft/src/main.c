@@ -55,6 +55,7 @@
 #include <ninecraft/mods/chat_mod.h>
 #include <ninecraft/ninecraft_http.h>
 #include <ninecraft/ninecraft_store.h>
+#include <ninecraft/cpprest_compat.h>
 #include <ninecraft/android/android_keycodes.h>
 #include <ninecraft/game_parameters.h>
 #include <ninecraft/runtime_config.h>
@@ -72,6 +73,11 @@ bool ctrl_pressed = false;
 bool is_fullscreen = false;
 
 int version_id = 0;
+
+static bool is_modern_client_version(void) {
+    return version_id == version_id_0_14_3 ||
+           version_id == version_id_0_15_6;
+}
 
 void *ninecraft_app;
 AppPlatform_linux platform;
@@ -508,7 +514,7 @@ static void release_forwarded_mouse_buttons_0_14_3(
 }
 
 static void mouse_click_callback(struct SDL_Window *window, int button, int action, int x, int y) {
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         unsigned int alt_actions = NINECRAFT_ALT_MOUSE_ACTION_NONE;
         int mc_button = button == SDL_BUTTON_LEFT ? 1 :
                         button == SDL_BUTTON_RIGHT ? 2 :
@@ -572,7 +578,7 @@ static void mouse_scroll_callback(struct SDL_Window *window, float xoffset, floa
     char key_code = 0;
     float offset = direction == SDL_MOUSEWHEEL_FLIPPED ? -yoffset : yoffset;
 
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         int x;
         int y;
         int amount = (int)roundf(offset * 127.0f);
@@ -602,7 +608,7 @@ static void mouse_scroll_callback(struct SDL_Window *window, float xoffset, floa
 }
 
 static void mouse_pos_callback(struct SDL_Window *window, int xpos, int ypos, int xrel, int yrel) {
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         unsigned int alt_actions;
 
         alt_mouse_x = (short)xpos;
@@ -1082,7 +1088,7 @@ float calculate_scale(int width, int height, float dpi) {
 }
 
 static void set_ninecraft_size(int width, int height) {
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         if (minecraft_client_set_rendering_size) {
 #ifdef _WIN32
             ninecraft_call_guest(
@@ -1189,7 +1195,7 @@ static void resize_callback(struct SDL_Window *window, int width, int height) {
 static void char_callback(struct SDL_Window *window, char *codepoint) {
     if (is_keyboard_visible) {
         chat_mod_append_char(codepoint[0]);
-        if (version_id == version_id_0_14_3 && minecraft_client_set_textbox_text_0_14_3) {
+        if (is_modern_client_version() && minecraft_client_set_textbox_text_0_14_3) {
             android_string_t str;
             if (AppPlatform_linux$appendTextBoxText_0_14_3(&str, codepoint)) {
                 call_minecraft_client_set_textbox_text_0_14_3(&str);
@@ -1227,7 +1233,7 @@ static void key_callback(struct SDL_Window *window, int key, int scancode, int a
     } else if (action == SDL_KEYUP) {
         mod_loader_execute_on_key_released(android_key);
     }
-    if (version_id == version_id_0_14_3 && key == SDLK_LALT) {
+    if (is_modern_client_version() && key == SDLK_LALT) {
         int mouse_x;
         int mouse_y;
         bool was_active = alt_mouse_mode.alt_active != 0;
@@ -1271,7 +1277,7 @@ static void key_callback(struct SDL_Window *window, int key, int scancode, int a
                 ctrl_pressed = false;
             }
         }
-        if (version_id == version_id_0_14_3) {
+        if (is_modern_client_version()) {
             bool is_return = key == SDLK_RETURN || key == SDLK_KP_ENTER;
             bool is_backspace = key == SDLK_BACKSPACE;
 
@@ -1545,7 +1551,7 @@ void grab_mouse() {
     unsigned int actions;
 
     puts("grab_mouse");
-    if (version_id != version_id_0_14_3) {
+    if (!is_modern_client_version()) {
         mouse_pointer_hidden = true;
         SDL_ShowCursor(SDL_DISABLE);
         SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -1565,7 +1571,7 @@ void release_mouse() {
     unsigned int actions;
 
     puts("release_mouse");
-    if (version_id != version_id_0_14_3) {
+    if (!is_modern_client_version()) {
         mouse_pointer_hidden = false;
         SDL_ShowCursor(SDL_ENABLE);
         SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -1626,6 +1632,50 @@ static void configure_app_platform_0_14_3(app_platform_0_9_0_t *plat) {
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_IS_TABLET] = (void *)AppPlatform_linux$isTablet;
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_EDITION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getEdition);
     platform_vtable_0_14_3.slots[APP_PLATFORM_0_14_3_GET_PLATFORM_TEMP_PATH] = (void *)AppPlatform_linux$getPlatformTempPath;
+}
+
+static void configure_app_platform_0_15_6(app_platform_0_9_0_t *plat) {
+    memcpy(&platform_vtable_0_15_6, plat->vtable, sizeof(platform_vtable_0_15_6));
+    plat->vtable = platform_vtable_0_15_6.slots;
+
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_DATA_URL] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getDataUrl);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PACKAGE_PATH] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getPackagePath);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_SHOW_KEYBOARD] = (void *)AppPlatform_linux$showKeyboard_0_14_3;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_HIDE_KEYBOARD] = (void *)AppPlatform_linux$hideKeyboard_0_14_3;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_HIDE_MOUSE_POINTER] = (void *)grab_mouse;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_SHOW_MOUSE_POINTER] = (void *)release_mouse;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_SWAP_BUFFERS] = (void *)AppPlatform_linux$swapBuffers;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_SYSTEM_REGION] = (void *)AppPlatform_linux$getSystemRegion;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_GRAPHICS_VENDOR] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsVendor);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_GRAPHICS_RENDERER] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsRenderer);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_GRAPHICS_VERSION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsVersion);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_GRAPHICS_EXTENSIONS] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getGraphicsExtensions);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_PICK_IMAGE] = (void *)AppPlatform_linux$pickImage;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_EXTERNAL_STORAGE_PATH] = (void *)AppPlatform_linux$getExternalStoragePath;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_INTERNAL_STORAGE_PATH] = (void *)AppPlatform_linux$getInternalStoragePath;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_USERDATA_PATH] = (void *)AppPlatform_linux$getUserdataPath;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_SCREEN_WIDTH] = (void *)AppPlatform_linux$getScreenWidth;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_SCREEN_HEIGHT] = (void *)AppPlatform_linux$getScreenHeight;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PIXELS_PER_MILLIMETER] = (void *)AppPlatform_linux$getPixelsPerMillimeter;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_UPDATE_TEXT_BOX_TEXT] = (void *)AppPlatform_linux$updateTextBoxText;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_IS_KEYBOARD_VISIBLE] = (void *)AppPlatform_linux$isKeyboardVisible_0_14_3;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_SUPPORTS_VIBRATION] = (void *)AppPlatform_linux$supportsVibration;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_VIBRATE] = (void *)AppPlatform_linux$vibrate;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_READ_ASSET_FILE] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$readAssetFile_0_9_0);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_USE_CENTERED_GUI] = (void *)AppPlatform_linux$useCenteredGUI;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PLATFORM_TYPE] = (void *)AppPlatform_linux$getScreenType;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_APPLICATION_ID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getApplicationId);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_AVAILABLE_MEMORY] = (void *)AppPlatform_linux$getAvailableMemory;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_TOTAL_MEMORY] = (void *)AppPlatform_linux$getTotalMemory;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_BROADCAST_ADDRESSES] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getBroadcastAddresses);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_MODEL_NAME] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getModelName);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_DEVICE_ID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getDeviceId);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_CREATE_UUID] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$createUUID);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_IS_FIRST_SNOOP_LAUNCH] = (void *)AppPlatform_linux$isFirstSnoopLaunch;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_HAS_HARDWARE_INFORMATION_CHANGED] = (void *)AppPlatform_linux$hasHardwareInformationChanged;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_IS_TABLET] = (void *)AppPlatform_linux$isTablet;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_EDITION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getEdition);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PLATFORM_TEMP_PATH] = (void *)AppPlatform_linux$getPlatformTempPath;
 }
 
 void gles_hook() {
@@ -1983,6 +2033,8 @@ static bool detect_version() {
             version_id = version_id_0_11_1;
         } else if (strcmp(verstr, "v0.14.3 alpha") == 0) {
             version_id = version_id_0_14_3;
+        } else if (strcmp(verstr, "v0.15.6 alpha") == 0) {
+            version_id = version_id_0_15_6;
         } else {
             puts("Unsupported Version!");
             found = false;
@@ -2240,7 +2292,7 @@ int main(int argc, char **argv) {
     ninecraft_crash_set_phase("creating the SDL OpenGL window");
 #endif
     _window = SDL_CreateWindow(
-        "Ninecraft 0.14.3 By Sunch233",
+        "Ninecraft 0.15.6 By Sunch233",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         720, 480,
         SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
@@ -2410,7 +2462,7 @@ int main(int argc, char **argv) {
     }
 
 #ifdef _WIN32
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         if (!ninecraft_device_identity_initialize()) {
             fputs(
                 "Unable to derive a stable device CID.\n",
@@ -2423,13 +2475,13 @@ int main(int argc, char **argv) {
     multitouch_setup_hooks(handle);
     keyboard_setup_hooks(handle);
     minecraft_setup_hooks(handle);
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         void *store_create;
         void *http_construct;
         void *http_send;
         void *http_abort;
 
-        /* SDL enables desktop text input by default.  MCPE 0.14.3 expects it
+        /* SDL enables desktop text input by default.  Modern MCPE expects it
          * to be active only between AppPlatform::show/hideKeyboard. */
         SDL_StopTextInput();
 
@@ -2445,6 +2497,10 @@ int main(int argc, char **argv) {
                 "_ZN15MinecraftClient14setTextboxTextERKSs");
         store_create = android_dlsym(handle, "_ZN12AndroidStore21createGooglePlayStoreERKSsR13StoreListener");
         http_construct = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroidC2ER11HTTPRequest");
+        if (!http_construct) {
+            /* 0.15.6 exports only the complete-object constructor. */
+            http_construct = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroidC1ER11HTTPRequest");
+        }
         http_send = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid4sendEv");
         http_abort = android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid5abortEv");
 
@@ -2455,7 +2511,7 @@ int main(int argc, char **argv) {
             !app_platform_construct || !minecraft_client_construct || !app_init ||
             !minecraft_client_update || !minecraft_client_set_rendering_size ||
             !minecraft_client_set_ui_size_and_scale || !minecraft_client_get_options) {
-            puts("MCPE 0.14.3 required exports are incomplete");
+            puts("MCPE 0.14.3/0.15.6 required exports are incomplete");
             return 1;
         }
 
@@ -2467,6 +2523,10 @@ int main(int argc, char **argv) {
         DETOUR(http_construct, ninecraft_http_construct, 1);
         DETOUR(http_send, ninecraft_http_send, 1);
         DETOUR(http_abort, ninecraft_http_abort, 1);
+        if (version_id == version_id_0_15_6 &&
+            !ninecraft_cpprest_initialize(handle)) {
+            return 1;
+        }
     }
     inject_mods(handle, version_id);
     mod_loader_load_all(handle, version_id);
@@ -2581,6 +2641,8 @@ int main(int argc, char **argv) {
         ninecraft_app_size = MINECRAFTCLIENT_SIZE_0_11_1;
     } else if (version_id == version_id_0_14_3) {
         ninecraft_app_size = MINECRAFTCLIENT_SIZE_0_14_3;
+    } else if (version_id == version_id_0_15_6) {
+        ninecraft_app_size = MINECRAFTCLIENT_SIZE_0_15_6;
     }
 
     if (!ninecraft_app_size) {
@@ -2588,9 +2650,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* 0.14.3's MinecraftClient constructor asks AppPlatform::mSingleton for
+    /* Modern MinecraftClient constructors ask AppPlatform::mSingleton for
      * the userdata path, so the platform must exist before the client. */
-    if (version_id == version_id_0_14_3) {
+    if (is_modern_client_version()) {
         plat = (app_platform_0_9_0_t *)calloc(1, sizeof(app_platform_0_9_0_t));
         context = (app_context_0_9_0_t *)calloc(1, sizeof(app_context_0_9_0_t));
         if (!plat || !context) {
@@ -2602,7 +2664,11 @@ int main(int argc, char **argv) {
 #else
         app_platform_construct(plat);
 #endif
-        configure_app_platform_0_14_3(plat);
+        if (version_id == version_id_0_15_6) {
+            configure_app_platform_0_15_6(plat);
+        } else {
+            configure_app_platform_0_14_3(plat);
+        }
         /* The Android activity normally supplies this state after creating the
          * native AppPlatform.  The desktop host already owns an active SDL
          * window, so expose that initial pointer focus to the client. */
@@ -2612,7 +2678,7 @@ int main(int argc, char **argv) {
     ninecraft_app = calloc(1, ninecraft_app_size);
     if (version_id >= version_id_0_9_0 && version_id <= version_id_0_9_5) {
         ninecraft_app_construct_2(ninecraft_app, 0, NULL);
-    } else if (version_id == version_id_0_14_3) {
+    } else if (is_modern_client_version()) {
 #ifdef _WIN32
         ninecraft_call_guest(
             (void *)minecraft_client_construct,
@@ -2735,11 +2801,11 @@ int main(int argc, char **argv) {
             DETOUR(android_dlsym(handle, "_ZN26HTTPRequestInternalAndroid5abortEv"), ninecraft_http_abort, 1);
             DETOUR(android_dlsym(handle, "_ZN12AndroidStore21createGooglePlayStoreERKSsR13StoreListener"), GET_SYSV_WRAPPER(ninecraft_store_create), 1);
         }
-        if (version_id != version_id_0_14_3) {
+        if (!is_modern_client_version()) {
             context->platform = plat;
         }
 #ifdef _WIN32
-        if (version_id == version_id_0_14_3 &&
+        if (is_modern_client_version() &&
             !ninecraft_device_identity_overwrite_client_id(
                 game_parameters.home_path)) {
             fputs(
@@ -2756,8 +2822,14 @@ int main(int argc, char **argv) {
         app_init(ninecraft_app, context);
 #endif
 #ifdef _WIN32
-        if (version_id == version_id_0_14_3 &&
-            !ninecraft_device_identity_verify_client(ninecraft_app, 0x1a8)) {
+        if (is_modern_client_version() &&
+            !(
+                version_id == version_id_0_14_3
+                    ? ninecraft_device_identity_verify_client(ninecraft_app, 0x1a8)
+                    : ninecraft_device_identity_verify_client_indirect(
+                          ninecraft_app,
+                          0x150,
+                          4))) {
             fputs(
                 "MCPE loaded a client ID that does not match this device; "
                 "initialization was blocked.\n",
@@ -2964,7 +3036,7 @@ int main(int argc, char **argv) {
 
 #ifdef _WIN32
         ninecraft_crash_set_phase("MCPE client update on the guest stack");
-        if (version_id == version_id_0_14_3) {
+        if (is_modern_client_version()) {
             call_with_custom_stack(minecraft_client_update, NULL, 1024 * 1024, 1, ninecraft_app);
         } else if (version_id >= version_id_0_10_0) {
             call_with_custom_stack(minecraft_update, NULL, 1024 * 1024, 1, ninecraft_app);
@@ -2972,7 +3044,7 @@ int main(int argc, char **argv) {
             call_with_custom_stack(ninecraft_app_update, NULL, 1024 * 1024, 1, ninecraft_app);
         }
 #else
-        if (version_id == version_id_0_14_3) {
+        if (is_modern_client_version()) {
             minecraft_client_update(ninecraft_app);
         } else if (version_id >= version_id_0_10_0) {
             minecraft_update(ninecraft_app);
@@ -2981,7 +3053,7 @@ int main(int argc, char **argv) {
         }
 #endif
 
-        if (version_id == version_id_0_14_3) {
+        if (is_modern_client_version()) {
             int mouse_x;
             int mouse_y;
             unsigned int alt_actions =
@@ -3003,7 +3075,7 @@ int main(int argc, char **argv) {
         sles_tick();
         SDL_GL_SwapWindow(_window);
 
-        if (version_id == version_id_0_14_3 && !is_keyboard_visible) {
+        if (is_modern_client_version() && !is_keyboard_visible) {
             ninecraft_ime_composition_reset(&ime_composition);
         }
 
@@ -3017,7 +3089,7 @@ int main(int argc, char **argv) {
             ninecraft_ime_composition_before_event(&ime_composition, is_ime_text_event);
 
             if (event.type == SDL_QUIT) {
-                if (version_id == version_id_0_14_3) {
+                if (is_modern_client_version()) {
                     unsigned int alt_actions =
                         ninecraft_alt_mouse_mode_focus(&alt_mouse_mode, 0);
                     release_forwarded_mouse_buttons_0_14_3(
@@ -3056,7 +3128,7 @@ int main(int argc, char **argv) {
                 mouse_scroll_callback(_window, event.wheel.preciseX, event.wheel.preciseY, event.wheel.direction);
             } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 resize_callback(_window, event.window.data1, event.window.data2);
-            } else if (version_id == version_id_0_14_3 && plat && event.type == SDL_WINDOWEVENT) {
+            } else if (is_modern_client_version() && plat && event.type == SDL_WINDOWEVENT) {
                 if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                     const Uint8 *keyboard_state = SDL_GetKeyboardState(NULL);
                     unsigned int alt_actions;

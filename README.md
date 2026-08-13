@@ -134,10 +134,10 @@ Set `disable_vsync=true` to request swap interval 0 after the OpenGL context is
 created. A graphics-driver control panel may still override this request.
 
 Set `windows10_ui=true` to use the Windows 10 edition start menu, desktop
-screen layouts and centered desktop HUD in Minecraft 0.14.3. Leave it `false`
+screen layouts and centered desktop HUD in Minecraft 0.14.3/0.15.6. Leave it `false`
 to retain the original Pocket Edition interface.
 
-Set `touch_mode=true` in Minecraft 0.14.3 to keep the system cursor unlocked
+Set `touch_mode=true` in Minecraft 0.14.3/0.15.6 to keep the system cursor unlocked
 and send the left mouse button through the game's native single-touch path.
 Clicks, holds and drags then behave like touchscreen input. Right click,
 middle click and the mouse wheel are ignored in this mode.
@@ -148,7 +148,7 @@ performance may still produce a lower frame rate.
 
 ### Alt touch-mouse mode
 
-In Minecraft 0.14.3 gameplay, hold **Left Alt** while the mouse is captured to
+In Minecraft 0.14.3/0.15.6 gameplay, hold **Left Alt** while the mouse is captured to
 temporarily release the cursor. The left mouse button is then sent through the
 game's native single-touch path, so clicks, holds and drags behave like a
 touchscreen. Release Left Alt to return to normal mouse-look; if a touch opened
@@ -164,7 +164,7 @@ active without holding Alt.
 
 ### Render distance selection
 
-Minecraft 0.14.3 selects its built-in render-distance levels from the total
+Minecraft 0.14.3/0.15.6 selects its built-in render-distance levels from the total
 physical memory reported by the platform. Ninecraft reports the RAM detected
 by SDL instead of the old fixed 575 MiB value. Systems with more than 2300 MiB
 therefore receive the native six-level list (`8, 10, 12, 14, 18, 22` chunks),
@@ -193,7 +193,7 @@ Ninecraft does not include Minecraft game data. Extract a legally obtained,
 supported 32-bit Minecraft PE APK before trying to launch the game.
 For Windows/i686, the APK must contain `lib/x86/libminecraftpe.so`.
 
-MCPE `v0.14.3 alpha` x86 is the currently verified Windows target. Point
+MCPE `v0.15.6 alpha` x86 is the currently verified Windows target. Point
 `--game` at the APK extraction root, not at its `lib/x86` directory. The root
 must contain at least:
 
@@ -223,22 +223,22 @@ ninecraft-extract
 ```
 ### Visual Studio 2022 build tools (Microsoft Windows)
 ```
-.\run-msvc.bat "C:\path\to\extracted-mcpe-0.14.3-x86"
+.\run-msvc.bat "C:\path\to\extracted-mcpe-0.15.6-x86"
 ```
 
 The runner validates the extracted client, builds `Release` when necessary,
 and stores worlds and options under
-`%LOCALAPPDATA%\Ninecraft\MCPE-0.14.3-x86` by default. Pass a second argument
+`%LOCALAPPDATA%\Ninecraft\MCPE-0.15.6-x86` by default. Pass a second argument
 to choose another user-data directory.
 
 The equivalent direct PowerShell launch is:
 
 ```powershell
-$gameRoot = 'C:\path\to\extracted-mcpe-0.14.3-x86'
-$userDataRoot = Join-Path $env:LOCALAPPDATA 'Ninecraft\MCPE-0.14.3-x86'
+$gameRoot = 'C:\path\to\extracted-mcpe-0.15.6-x86'
+$userDataRoot = Join-Path $env:LOCALAPPDATA 'Ninecraft\MCPE-0.15.6-x86'
 New-Item -ItemType Directory -Force -Path $userDataRoot | Out-Null
 
-& '.\build-msvc-win32\ninecraft\Release\ninecraft.exe' `
+& '.\build-msvc-v141xp\ninecraft\Release\ninecraft.exe' `
     --game $gameRoot `
     --home $userDataRoot
 ```

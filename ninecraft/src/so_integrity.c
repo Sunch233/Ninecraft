@@ -27,9 +27,9 @@ typedef struct {
 
 #if defined(__i386__) || defined(_M_IX86)
 static const ninecraft_so_manifest_entry_t ninecraft_so_manifest[] = {
-    {"libgnustl_shared.so", "AE0A39FC3050288B5346D218399AF9AD"},
-    {"libfmod.so", "CF66FA7EBB4E45010E3DCAFFD30C04C6"},
-    {"libminecraftpe.so", "B2C3CD9D1DAB10F161BADA2A9995AA19"}
+    {"libgnustl_shared.so", "DCD69090635D379FAB15EFD421339BED"},
+    {"libfmod.so", "48CADEC3A27DC1E3B63ACC544606FA3B"},
+    {"libminecraftpe.so", "95CC2DC29C783E9F9A5E169A72C0B614"}
 };
 #define NINECRAFT_SO_MANIFEST_COUNT \
     (sizeof(ninecraft_so_manifest) / sizeof(ninecraft_so_manifest[0]))

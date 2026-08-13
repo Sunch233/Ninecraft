@@ -96,7 +96,7 @@ void *minecraft_get_options(void *minecraft, int version_id) {
         mc_options = (char *)minecraft + MINECRAFT_OPTIONS_OFFSET_0_9_4;
     } else if (version_id == version_id_0_9_5) {
         mc_options = (char *)minecraft + MINECRAFT_OPTIONS_OFFSET_0_9_5;
-    } else if (version_id == version_id_0_14_3) {
+    } else if (version_id == version_id_0_14_3 || version_id == version_id_0_15_6) {
 #ifdef _WIN32
         mc_options = (char *)ninecraft_call_guest(
             (void *)minecraft_client_get_options,
@@ -370,6 +370,10 @@ void minecraft_setup_hooks(void *handle) {
     minecraft_update = (minecraft_update_t)android_dlsym(handle, "_ZN9Minecraft6updateEv");
     minecraft_client_update = (minecraft_update_t)android_dlsym(handle, "_ZN15MinecraftClient6updateEv");
     minecraft_client_construct = (minecraft_client_construct_t)android_dlsym(handle, "_ZN15MinecraftClientC2EiPPc");
+    if (!minecraft_client_construct) {
+        /* 0.15.6 exports only the complete-object constructor. */
+        minecraft_client_construct = (minecraft_client_construct_t)android_dlsym(handle, "_ZN15MinecraftClientC1EiPPc");
+    }
     minecraft_client_init = (minecraft_client_init_t)android_dlsym(handle, "_ZN15MinecraftClient4initEv");
     app_platform_construct = (app_platform_construct_t)android_dlsym(handle, "_ZN11AppPlatformC2Ev");
     screen_construct = (screen_construct_t)android_dlsym(handle, "_ZN6ScreenC2Ev");

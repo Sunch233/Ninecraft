@@ -411,4 +411,26 @@ bool ninecraft_device_identity_verify_client(
     return actual == identity->cid;
 }
 
+bool ninecraft_device_identity_verify_client_indirect(
+    const void *minecraft_client,
+    size_t object_pointer_offset,
+    size_t client_id_offset) {
+    const ninecraft_device_identity_t *identity =
+        ninecraft_device_identity_get();
+    const uint8_t *object = NULL;
+    uint64_t actual = 0;
+    if (!identity || !minecraft_client) {
+        return false;
+    }
+    memcpy(
+        &object,
+        (const uint8_t *)minecraft_client + object_pointer_offset,
+        sizeof(object));
+    if (!object) {
+        return false;
+    }
+    memcpy(&actual, object + client_id_offset, sizeof(actual));
+    return actual == identity->cid;
+}
+
 #endif

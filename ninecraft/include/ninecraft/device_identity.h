@@ -28,9 +28,15 @@ const ninecraft_device_identity_t *ninecraft_device_identity_get(void);
 /* Replaces <home>/storage/minecraftpe/clientId.txt atomically. */
 bool ninecraft_device_identity_overwrite_client_id(const char *home_path);
 
-/* Verifies the 0.14.3 x86 MinecraftClient clientId field after init. */
+/* Verifies a direct x86 MinecraftClient clientId field after init. */
 bool ninecraft_device_identity_verify_client(
     const void *minecraft_client,
+    size_t client_id_offset);
+
+/* Verifies a clientId stored in an object referenced by MinecraftClient. */
+bool ninecraft_device_identity_verify_client_indirect(
+    const void *minecraft_client,
+    size_t object_pointer_offset,
     size_t client_id_offset);
 
 #endif

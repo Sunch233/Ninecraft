@@ -731,6 +731,12 @@ void AppPlatform_linux$getDataUrl(android_string_t *ret, AppPlatform_linux *app_
     android_string_cstr(ret, path);
 }
 
+SYSV_WRAPPER(AppPlatform_linux$getPackagePath, 2)
+void AppPlatform_linux$getPackagePath(android_string_t *ret, AppPlatform_linux *app_platform) {
+    (void)app_platform;
+    android_string_cstr(ret, "");
+}
+
 void AppPlatform_linux$saveImage(AppPlatform_linux *app_platform, android_string_t *resource_path, android_string_t *pixels, int width, int height) {
     //puts("debug: AppPlatform_linux::saveImage");
 }
