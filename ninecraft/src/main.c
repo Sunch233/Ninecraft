@@ -1682,6 +1682,12 @@ static void configure_app_platform_0_15_6(app_platform_0_9_0_t *plat) {
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_HAS_HARDWARE_INFORMATION_CHANGED] = (void *)AppPlatform_linux$hasHardwareInformationChanged;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_IS_TABLET] = (void *)AppPlatform_linux$isTablet;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_EDITION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getEdition);
+    /* We construct the AppPlatform base class, whose defaults are Mouse (1)
+     * and Desktop scaling (0).  Android 0.15.6 overrides both with 2.  Keep
+     * those Android values for Pocket UI, and use the base values only when
+     * Windows 10 UI was explicitly requested. */
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_DEFAULT_INPUT_MODE] = (void *)AppPlatform_linux$getDefaultInputMode;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PLATFORM_UI_SCALING_RULES] = (void *)AppPlatform_linux$getPlatformUIScalingRules;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PLATFORM_TEMP_PATH] = (void *)AppPlatform_linux$getPlatformTempPath;
 }
 

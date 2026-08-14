@@ -761,6 +761,17 @@ int AppPlatform_linux$getScreenType(AppPlatform_linux *app_platform) {
     return ninecraft_runtime_config.windows10_ui ? 0 : 1;
 }
 
+int AppPlatform_linux$getDefaultInputMode(AppPlatform_linux *app_platform) {
+    (void)app_platform;
+    return ninecraft_runtime_config.windows10_ui ? 1 : 2;
+}
+
+int AppPlatform_linux$getPlatformUIScalingRules(
+    AppPlatform_linux *app_platform) {
+    (void)app_platform;
+    return ninecraft_runtime_config.windows10_ui ? 0 : 2;
+}
+
 SYSV_WRAPPER(AppPlatform_linux$getEdition, 2)
 void AppPlatform_linux$getEdition(
     android_string_t *ret,

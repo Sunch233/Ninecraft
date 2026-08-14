@@ -157,11 +157,18 @@ extern int AppPlatform_linux$getScreenHeight(AppPlatform_linux *app_platform);
 
 extern int AppPlatform_linux$getScreenWidth(AppPlatform_linux *app_platform);
 
-/* MCPE 0.14.3 UI selectors. Desktop/Windows 10 mode uses centered HUD
+/* MCPE 0.14.3/0.15.6 UI selectors. Desktop/Windows 10 mode uses centered HUD
  * rendering, UIScreenType::Desktop (0), and the "win10" edition string. */
 bool AppPlatform_linux$useCenteredGUI(AppPlatform_linux *app_platform);
 
 int AppPlatform_linux$getScreenType(AppPlatform_linux *app_platform);
+
+/* InputMode::Mouse = 1, InputMode::Touch = 2. */
+int AppPlatform_linux$getDefaultInputMode(AppPlatform_linux *app_platform);
+
+/* UIScalingRules::Desktop = 0; PocketAndroid = 2. */
+int AppPlatform_linux$getPlatformUIScalingRules(
+    AppPlatform_linux *app_platform);
 
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$getEdition);
 void AppPlatform_linux$getEdition(
