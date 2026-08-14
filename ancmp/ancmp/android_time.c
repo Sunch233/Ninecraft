@@ -4,6 +4,89 @@
 #ifdef _WIN32
 #include <windows.h>
 
+typedef VOID (WINAPI *get_system_time_precise_as_file_time_fn)(LPFILETIME);
+
+static volatile LONG high_resolution_time_init_state = 0;
+static get_system_time_precise_as_file_time_fn
+    high_resolution_time_precise_function = NULL;
+static LARGE_INTEGER high_resolution_time_counter_base = {0};
+static LARGE_INTEGER high_resolution_time_counter_frequency = {0};
+static ULARGE_INTEGER high_resolution_time_file_time_base = {0};
+
+static void get_high_resolution_file_time(FILETIME *file_time) {
+    LONG init_state;
+    LARGE_INTEGER counter;
+    ULARGE_INTEGER result;
+
+    init_state = InterlockedCompareExchange(
+        &high_resolution_time_init_state, 1, 0);
+    if (init_state == 0) {
+        HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
+
+        if (kernel32 != NULL) {
+            high_resolution_time_precise_function =
+                (get_system_time_precise_as_file_time_fn)GetProcAddress(
+                    kernel32, "GetSystemTimePreciseAsFileTime");
+        }
+
+        if (high_resolution_time_precise_function == NULL &&
+            QueryPerformanceFrequency(
+                &high_resolution_time_counter_frequency) &&
+            high_resolution_time_counter_frequency.QuadPart > 0) {
+            FILETIME base_file_time;
+
+            GetSystemTimeAsFileTime(&base_file_time);
+            if (QueryPerformanceCounter(&high_resolution_time_counter_base)) {
+                high_resolution_time_file_time_base.LowPart =
+                    base_file_time.dwLowDateTime;
+                high_resolution_time_file_time_base.HighPart =
+                    base_file_time.dwHighDateTime;
+            } else {
+                high_resolution_time_counter_frequency.QuadPart = 0;
+            }
+        }
+
+        InterlockedExchange(&high_resolution_time_init_state, 2);
+    } else {
+        while (InterlockedCompareExchange(
+                   &high_resolution_time_init_state, 2, 2) != 2) {
+            Sleep(0);
+        }
+    }
+
+    if (high_resolution_time_precise_function != NULL) {
+        high_resolution_time_precise_function(file_time);
+        return;
+    }
+
+    if (high_resolution_time_counter_frequency.QuadPart > 0 &&
+        QueryPerformanceCounter(&counter)) {
+        LONGLONG elapsed_counter =
+            counter.QuadPart - high_resolution_time_counter_base.QuadPart;
+
+        if (elapsed_counter >= 0) {
+            ULONGLONG elapsed_seconds =
+                (ULONGLONG)elapsed_counter /
+                (ULONGLONG)high_resolution_time_counter_frequency.QuadPart;
+            ULONGLONG elapsed_remainder =
+                (ULONGLONG)elapsed_counter %
+                (ULONGLONG)high_resolution_time_counter_frequency.QuadPart;
+            ULONGLONG elapsed_100ns =
+                elapsed_seconds * 10000000ULL +
+                elapsed_remainder * 10000000ULL /
+                    (ULONGLONG)high_resolution_time_counter_frequency.QuadPart;
+
+            result.QuadPart =
+                high_resolution_time_file_time_base.QuadPart + elapsed_100ns;
+            file_time->dwLowDateTime = result.LowPart;
+            file_time->dwHighDateTime = result.HighPart;
+            return;
+        }
+    }
+
+    GetSystemTimeAsFileTime(file_time);
+}
+
 static void UnixTimeToFileTime(time_t t, FILETIME *ft) {
     const LONGLONG EPOCH_DIFFERENCE = 116444736000000000;
     LONGLONG ull = ((LONGLONG)t * 10000000) + EPOCH_DIFFERENCE;
@@ -156,11 +239,11 @@ int android_clock_gettime(android_clockid_t clk_id, android_timespec_t *tp) {
 
 int android_gettimeofday(android_timeval_t *tp, android_timezone_t *tzp) {
     FILETIME file_time;
-    SYSTEMTIME system_time;
     ULARGE_INTEGER ularge;
     const ULONGLONG EPOCH_DIFFERENCE = 116444736000000000;
-    GetSystemTime(&system_time);
-    SystemTimeToFileTime(&system_time, &file_time);
+    (void)tzp;
+
+    get_high_resolution_file_time(&file_time);
     ularge.LowPart = file_time.dwLowDateTime;
     ularge.HighPart = file_time.dwHighDateTime;
     ularge.QuadPart -= EPOCH_DIFFERENCE;
