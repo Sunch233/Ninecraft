@@ -31,6 +31,7 @@
 #include "string/android_string.h"
 #include "android_errno.h"
 #include "android_time.h"
+#include "android_epoll.h"
 #include "wchar/android_wchar.h"
 #include "android_aeabi.h"
 #include <sys/stat.h>
@@ -113,6 +114,35 @@ int android_getsockname(int sockfd, struct sockaddr *addr, android_socklen_t *ad
         
     }
     return -1;
+}
+
+int android_getpeername(int sockfd, struct sockaddr *addr, android_socklen_t *addrlen) {
+    union {
+        struct sockaddr_in ipv4;
+        struct sockaddr_in6 ipv6;
+    } peer_addr;
+    int len = sizeof(peer_addr);
+
+    if (addr == NULL || addrlen == NULL) {
+        return -1;
+    }
+    if (getpeername(sockfd, (struct sockaddr *)&peer_addr, &len) != 0) {
+        return -1;
+    }
+
+    peer_addr.ipv4.sin_family = af_to_android(peer_addr.ipv4.sin_family);
+    if (peer_addr.ipv4.sin_family == ANDROID_AF_INET) {
+        memcpy(addr, &peer_addr.ipv4,
+               (*addrlen < sizeof(struct sockaddr_in)) ? *addrlen : sizeof(struct sockaddr_in));
+        *addrlen = sizeof(struct sockaddr_in);
+    } else if (peer_addr.ipv4.sin_family == ANDROID_AF_INET6) {
+        memcpy(addr, &peer_addr.ipv6,
+               (*addrlen < sizeof(struct sockaddr_in6)) ? *addrlen : sizeof(struct sockaddr_in6));
+        *addrlen = sizeof(struct sockaddr_in6);
+    } else {
+        return -1;
+    }
+    return 0;
 }
 
 int android_select(int nfds, android_fd_set_t *readfds, android_fd_set_t *writefds, android_fd_set_t *exceptfds, struct timeval *timeout) {
@@ -211,7 +241,149 @@ typedef struct {
 typedef unsigned int  android_nfds_t;
 
 int android_poll(android_pollfd_t *fds, android_nfds_t nfds, long timeout) {
-    return -1;
+#define ANDROID_POLLIN 0x0001
+#define ANDROID_POLLPRI 0x0002
+#define ANDROID_POLLOUT 0x0004
+#define ANDROID_POLLERR 0x0008
+#define ANDROID_POLLHUP 0x0010
+#define ANDROID_POLLNVAL 0x0020
+    DWORD start;
+
+    if ((fds == NULL && nfds != 0) || timeout < -1) {
+        errno = EINVAL;
+        return -1;
+    }
+    start = GetTickCount();
+    for (;;) {
+        fd_set read_set;
+        fd_set write_set;
+        fd_set except_set;
+        struct timeval select_timeout;
+        int socket_count = 0;
+        int ready_count = 0;
+        android_nfds_t index;
+        DWORD slice_ms = 10;
+
+        FD_ZERO(&read_set);
+        FD_ZERO(&write_set);
+        FD_ZERO(&except_set);
+        for (index = 0; index < nfds; ++index) {
+            SOCKET socket_fd;
+            fds[index].revents = 0;
+            if (fds[index].fd < 0 || !is_socket(fds[index].fd)) {
+                continue;
+            }
+            socket_fd = (SOCKET)fds[index].fd;
+            if (fds[index].events & (ANDROID_POLLIN | ANDROID_POLLPRI)) {
+                FD_SET(socket_fd, &read_set);
+            }
+            if (fds[index].events & ANDROID_POLLOUT) {
+                FD_SET(socket_fd, &write_set);
+            }
+            FD_SET(socket_fd, &except_set);
+            ++socket_count;
+        }
+
+        if (timeout >= 0) {
+            DWORD elapsed = GetTickCount() - start;
+            DWORD remaining = elapsed >= (DWORD)timeout
+                                  ? 0
+                                  : (DWORD)timeout - elapsed;
+            if (slice_ms > remaining) {
+                slice_ms = remaining;
+            }
+        }
+        select_timeout.tv_sec = (long)(slice_ms / 1000);
+        select_timeout.tv_usec = (long)((slice_ms % 1000) * 1000);
+        if (socket_count != 0) {
+            if (select(
+                    0,
+                    &read_set,
+                    &write_set,
+                    &except_set,
+                    &select_timeout) == SOCKET_ERROR) {
+                errno = EIO;
+                return -1;
+            }
+        } else if (slice_ms != 0) {
+            Sleep(slice_ms);
+        }
+
+        for (index = 0; index < nfds; ++index) {
+            short revents = 0;
+            int fd = fds[index].fd;
+
+            if (fd < 0) {
+                continue;
+            }
+            if (is_socket(fd)) {
+                SOCKET socket_fd = (SOCKET)fd;
+                if (FD_ISSET(socket_fd, &read_set)) {
+                    revents |= fds[index].events &
+                               (ANDROID_POLLIN | ANDROID_POLLPRI);
+                }
+                if (FD_ISSET(socket_fd, &write_set)) {
+                    revents |= fds[index].events & ANDROID_POLLOUT;
+                }
+                if (FD_ISSET(socket_fd, &except_set)) {
+                    revents |= ANDROID_POLLERR;
+                }
+            } else if (android_random_device_is_fd(fd)) {
+                revents |= fds[index].events & ANDROID_POLLIN;
+            } else {
+                intptr_t raw_handle = _get_osfhandle(fd);
+                if (raw_handle == -1) {
+                    revents |= ANDROID_POLLNVAL;
+                } else {
+                    HANDLE handle = (HANDLE)raw_handle;
+                    DWORD file_type = GetFileType(handle);
+                    if (file_type == FILE_TYPE_PIPE) {
+                        if (fds[index].events &
+                            (ANDROID_POLLIN | ANDROID_POLLPRI)) {
+                            DWORD available = 0;
+                            if (PeekNamedPipe(
+                                    handle,
+                                    NULL,
+                                    0,
+                                    NULL,
+                                    &available,
+                                    NULL)) {
+                                if (available != 0) {
+                                    revents |= fds[index].events &
+                                               (ANDROID_POLLIN | ANDROID_POLLPRI);
+                                }
+                            } else if (GetLastError() == ERROR_BROKEN_PIPE) {
+                                revents |= ANDROID_POLLHUP;
+                            } else {
+                                revents |= ANDROID_POLLERR;
+                            }
+                        }
+                        if (fds[index].events & ANDROID_POLLOUT) {
+                            revents |= ANDROID_POLLOUT;
+                        }
+                    } else if (file_type != FILE_TYPE_UNKNOWN ||
+                               GetLastError() == NO_ERROR) {
+                        revents |= fds[index].events &
+                                   (ANDROID_POLLIN | ANDROID_POLLPRI |
+                                    ANDROID_POLLOUT);
+                    } else {
+                        revents |= ANDROID_POLLNVAL;
+                    }
+                }
+            }
+            fds[index].revents = revents;
+            if (revents != 0) {
+                ++ready_count;
+            }
+        }
+        if (ready_count != 0) {
+            return ready_count;
+        }
+        if (timeout == 0 ||
+            (timeout > 0 && GetTickCount() - start >= (DWORD)timeout)) {
+            return 0;
+        }
+    }
 }
 
 int android_sigaction(int signum, void *act, void *oldact) {
@@ -246,6 +418,10 @@ int android_fdatasync(int fd) {
 }
 
 int android_geteuid(void) {
+    return 0;
+}
+
+int android_getuid(void) {
     return 0;
 }
 
@@ -291,6 +467,7 @@ int android_shutdown(int sockfd, int how) {
 #define android_select select
 #define android_gethostname gethostname
 #define android_getsockname getsockname
+#define android_getpeername getpeername
 #define android_div div
 #define android_inet_ntoa inet_ntoa
 #define android_inet_addr inet_addr
@@ -304,6 +481,7 @@ int android_shutdown(int sockfd, int how) {
 #define android_fsync fsync
 #define android_fdatasync fdatasync
 #define android_geteuid geteuid
+#define android_getuid getuid
 #define android_getpid getpid
 #define android_remove remove
 #define android_rename rename
@@ -419,17 +597,27 @@ int android_getaddrinfo(const char *node, const char *service, const struct addr
     if (hints) {
         h = *hints;
         h.ai_family = af_to_native(h.ai_family);
-        h.ai_socktype = af_to_native(h.ai_socktype);
+        h.ai_socktype = sock_to_native(h.ai_socktype);
         h.ai_protocol = ipproto_to_native(h.ai_protocol);
         hp = &h;
     }
 
+    if (res == NULL) {
+        return EAI_FAIL;
+    }
     ret = getaddrinfo(node, service, hp, res);
+
+    if (ret != 0 || *res == NULL) {
+        return ret;
+    }
 
     for (addr = *res; addr != NULL; addr = addr->ai_next) {
         addr->ai_family = af_to_android(addr->ai_family);
         addr->ai_socktype = sock_to_android(addr->ai_socktype);
         addr->ai_protocol = ipproto_to_android(addr->ai_protocol);
+        if (addr->ai_addr != NULL) {
+            addr->ai_addr->sa_family = af_to_android(addr->ai_addr->sa_family);
+        }
     }
     return ret;
 }
@@ -441,9 +629,38 @@ void android_freeaddrinfo(struct addrinfo *res) {
             addr->ai_family = af_to_native(addr->ai_family);
             addr->ai_socktype = sock_to_native(addr->ai_socktype);
             addr->ai_protocol = ipproto_to_native(addr->ai_protocol);
+            if (addr->ai_addr != NULL) {
+                addr->ai_addr->sa_family = af_to_native(addr->ai_addr->sa_family);
+            }
         }
         freeaddrinfo(res);
     }
+}
+
+int android_getnameinfo(const struct sockaddr *address,
+                        android_socklen_t address_length,
+                        char *host,
+                        android_socklen_t host_length,
+                        char *service,
+                        android_socklen_t service_length,
+                        int flags) {
+    struct sockaddr_storage native_address;
+
+    if (address == NULL || address_length > sizeof(native_address)) {
+        return EAI_FAIL;
+    }
+    memset(&native_address, 0, sizeof(native_address));
+    memcpy(&native_address, address, address_length);
+    ((struct sockaddr *)&native_address)->sa_family =
+        af_to_native(((const struct sockaddr *)address)->sa_family);
+    return getnameinfo(
+        (const struct sockaddr *)&native_address,
+        address_length,
+        host,
+        host_length,
+        service,
+        service_length,
+        flags);
 }
 
 #else
@@ -456,11 +673,81 @@ void android_freeaddrinfo(android_addrinfo_t *res) {
 
 }
 
+int android_getnameinfo(const struct sockaddr *address,
+                        android_socklen_t address_length,
+                        char *host,
+                        android_socklen_t host_length,
+                        char *service,
+                        android_socklen_t service_length,
+                        int flags) {
+    (void)address;
+    (void)address_length;
+    (void)host;
+    (void)host_length;
+    (void)service;
+    (void)service_length;
+    (void)flags;
+    return -1;
+}
+
 #define android_gethostbyname gethostbyname
 #endif
 
+const char *android_gai_strerror(int error_code) {
+#ifdef _WIN32
+    const char *message = gai_strerrorA(error_code);
+    return message ? message : "Unknown address resolution error";
+#else
+    return gai_strerror(error_code);
+#endif
+}
+
 int android_setpriority(int which, int who, int prio) {
     return 0;
+}
+
+static int android_setenv(
+    const char *name,
+    const char *value,
+    int overwrite) {
+    if (!name || !name[0] || strchr(name, '=') || !value) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!overwrite && getenv(name)) {
+        return 0;
+    }
+#ifdef _WIN32
+    {
+        int result = _putenv_s(name, value);
+        if (result != 0) {
+            errno = result;
+            return -1;
+        }
+        return 0;
+    }
+#else
+    return setenv(name, value, overwrite);
+#endif
+}
+
+static int android_unsetenv(const char *name) {
+    if (!name || !name[0] || strchr(name, '=')) {
+        errno = EINVAL;
+        return -1;
+    }
+#ifdef _WIN32
+    {
+        int result = _putenv_s(name, "");
+        if (result != 0) {
+            errno = result;
+            return -1;
+        }
+        return 0;
+    }
+#else
+    return unsetenv(name);
+#endif
 }
 
 FLOAT_ABI_FIX double android_strtod(const char *nptr, char **endptr) {
@@ -708,6 +995,14 @@ static hook_t semaphore_hooks[] = {
 
 static hook_t pthread_hooks[] = {
     {
+        "__pthread_cleanup_push",
+        (void *)android_pthread_cleanup_push
+    },
+    {
+        "__pthread_cleanup_pop",
+        (void *)android_pthread_cleanup_pop
+    },
+    {
         "pthread_attr_init",
         (void *)android_pthread_attr_init
     },
@@ -718,6 +1013,10 @@ static hook_t pthread_hooks[] = {
     {
         "pthread_attr_setdetachstate",
         (void *)android_pthread_attr_setdetachstate
+    },
+    {
+        "pthread_attr_getdetachstate",
+        (void *)android_pthread_attr_getdetachstate
     },
     {
         "pthread_attr_setschedparam",
@@ -993,6 +1292,22 @@ static hook_t math_hooks[] = {
     {
         "exp2",
         (void *)android_exp2
+    },
+    {
+        "fmaxf",
+        (void *)android_fmaxf
+    },
+    {
+        "nearbyintf",
+        (void *)android_nearbyintf
+    },
+    {
+        "roundf",
+        (void *)android_roundf
+    },
+    {
+        "truncf",
+        (void *)android_truncf
     },
     {
         (char *)NULL,
@@ -1659,6 +1974,14 @@ static hook_t hooks[] = {
         (void *)android_recvfrom
     },
     {
+        "recvmsg",
+        (void *)android_recvmsg
+    },
+    {
+        "sendmsg",
+        (void *)android_sendmsg
+    },
+    {
         "getsockopt",
         (void *)android_getsockopt
     },
@@ -1689,6 +2012,10 @@ static hook_t hooks[] = {
     {
         "getsockname",
         (void *)android_getsockname
+    },
+    {
+        "getpeername",
+        (void *)android_getpeername
     },
     {
         "shutdown",
@@ -1747,6 +2074,10 @@ static hook_t hooks[] = {
         (void *)android_fprintf
     },
     {
+        "vfprintf",
+        (void *)android_vfprintf
+    },
+    {
         "fscanf",
         (void *)android_fscanf
     },
@@ -1765,6 +2096,10 @@ static hook_t hooks[] = {
     {
         "getpid",
         (void *)android_getpid
+    },
+    {
+        "getuid",
+        (void *)android_getuid
     },
     {
         "nanosleep",
@@ -1805,6 +2140,18 @@ static hook_t hooks[] = {
     {
         "poll",
         (void *)android_poll
+    },
+    {
+        "epoll_create",
+        (void *)android_epoll_create
+    },
+    {
+        "epoll_ctl",
+        (void *)android_epoll_ctl
+    },
+    {
+        "epoll_wait",
+        (void *)android_epoll_wait
     },
     {
         "ferror",
@@ -1883,8 +2230,24 @@ static hook_t hooks[] = {
         (void *)android_time
     },
     {
+        "ctime",
+        (void *)android_ctime
+    },
+    {
+        "clock",
+        (void *)android_clock
+    },
+    {
+        "sleep",
+        (void *)android_sleep
+    },
+    {
         "gmtime",
         (void *)android_gmtime
+    },
+    {
+        "gmtime_r",
+        (void *)android_gmtime_r
     },
     {
         "mktime",
@@ -1901,6 +2264,10 @@ static hook_t hooks[] = {
     {
         "strftime",
         (void *)android_strftime
+    },
+    {
+        "strptime",
+        (void *)android_strptime
     },
     {
         "rmdir",
@@ -1983,12 +2350,32 @@ static hook_t hooks[] = {
         (void *)android_getaddrinfo
     },
     {
+        "gai_strerror",
+        (void *)android_gai_strerror
+    },
+    {
+        "getnameinfo",
+        (void *)android_getnameinfo
+    },
+    {
         "freeaddrinfo",
         (void *)android_freeaddrinfo
     },
     {
         "inet_ntop",
         (void *)android_inet_ntop
+    },
+    {
+        "inet_pton",
+        (void *)android_inet_pton
+    },
+    {
+        "if_nametoindex",
+        (void *)android_if_nametoindex
+    },
+    {
+        "if_indextoname",
+        (void *)android_if_indextoname
     },
     {
         "setpriority",
@@ -2073,6 +2460,14 @@ static hook_t hooks[] = {
     {
         "getenv",
         (void *)getenv
+    },
+    {
+        "setenv",
+        (void *)android_setenv
+    },
+    {
+        "unsetenv",
+        (void *)android_unsetenv
     },
     {
         "lseek",

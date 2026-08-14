@@ -5,4 +5,6 @@
 
 size_t android_strftime(char *s, size_t maxsize, const char *format, const struct tm *t);
 
+char *android_strptime(const char *input, const char *format, struct tm *result);
+
 #endif

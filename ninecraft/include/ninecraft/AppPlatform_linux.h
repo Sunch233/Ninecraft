@@ -192,6 +192,11 @@ extern bool AppPlatform_linux$isTouchscreen(AppPlatform_linux *app_platform);
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$loadTexture);
 extern void AppPlatform_linux$loadTexture(texture_data_t *ret, AppPlatform_linux *app_platform, android_string_t *path_str, bool alpha);
 
+extern void AppPlatform_linux$loadTexture_0_15_6(
+    AppPlatform_linux *app_platform,
+    texture_data_0_15_6_t *ret,
+    android_string_t *path_str);
+
 EXTERN_SYSV_WRAPPER(AppPlatform_linux$loadTextureOld);
 extern void AppPlatform_linux$loadTextureOld(texture_data_old_t *ret, AppPlatform_linux *app_platform, android_string_t *path_str, bool alpha);
 

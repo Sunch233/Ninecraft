@@ -21,5 +21,5 @@ if(MSVC)
 endif()
 
 if (WIN32)
-    target_link_libraries(ancmp ws2_32 advapi32)
+    target_link_libraries(ancmp ws2_32 advapi32 iphlpapi)
 endif()

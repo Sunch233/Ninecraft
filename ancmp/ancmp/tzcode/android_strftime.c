@@ -624,3 +624,144 @@ static size_t strftime_tz(char *s, size_t maxsize, const char *format, const str
 size_t android_strftime(char *s, size_t maxsize, const char *format, const struct tm *t) {
     return strftime_tz(s, maxsize, format, t, Locale);
 }
+
+static int android_strptime_ascii_equal(char left, char right) {
+    if (left >= 'A' && left <= 'Z') {
+        left = (char)(left - 'A' + 'a');
+    }
+    if (right >= 'A' && right <= 'Z') {
+        right = (char)(right - 'A' + 'a');
+    }
+    return left == right;
+}
+
+static int android_strptime_match_abbreviation(
+    const char *input,
+    const char *const *names,
+    int count) {
+    int i;
+    for (i = 0; i < count; ++i) {
+        if (android_strptime_ascii_equal(input[0], names[i][0]) &&
+            android_strptime_ascii_equal(input[1], names[i][1]) &&
+            android_strptime_ascii_equal(input[2], names[i][2])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int android_strptime_number(
+    const char **input,
+    int digits,
+    int minimum,
+    int maximum,
+    int *value) {
+    const char *cursor = *input;
+    int parsed = 0;
+    int i;
+    for (i = 0; i < digits; ++i) {
+        if (cursor[i] < '0' || cursor[i] > '9') {
+            return 0;
+        }
+        parsed = parsed * 10 + cursor[i] - '0';
+    }
+    if (parsed < minimum || parsed > maximum) {
+        return 0;
+    }
+    *input = cursor + digits;
+    *value = parsed;
+    return 1;
+}
+
+char *android_strptime(
+    const char *input,
+    const char *format,
+    struct tm *result) {
+    const char *cursor = input;
+    const char *spec = format;
+    int value;
+
+    if (!input || !format || !result) {
+        return NULL;
+    }
+    while (*spec) {
+        if (*spec == ' ' || *spec == '\t' || *spec == '\n') {
+            while (*spec == ' ' || *spec == '\t' || *spec == '\n') {
+                ++spec;
+            }
+            while (*cursor == ' ' || *cursor == '\t' || *cursor == '\n') {
+                ++cursor;
+            }
+            continue;
+        }
+        if (*spec != '%') {
+            if (*cursor != *spec) {
+                return NULL;
+            }
+            ++cursor;
+            ++spec;
+            continue;
+        }
+        ++spec;
+        switch (*spec) {
+            case 'a':
+                value = android_strptime_match_abbreviation(
+                    cursor,
+                    Locale->wday,
+                    ANDROID_DAYSPERWEEK);
+                if (value < 0) {
+                    return NULL;
+                }
+                result->tm_wday = value;
+                cursor += 3;
+                break;
+            case 'b':
+                value = android_strptime_match_abbreviation(
+                    cursor,
+                    Locale->mon,
+                    ANDROID_MONSPERYEAR);
+                if (value < 0) {
+                    return NULL;
+                }
+                result->tm_mon = value;
+                cursor += 3;
+                break;
+            case 'd':
+                if (!android_strptime_number(&cursor, 2, 1, 31, &result->tm_mday)) {
+                    return NULL;
+                }
+                break;
+            case 'Y':
+                if (!android_strptime_number(&cursor, 4, 1900, 9999, &value)) {
+                    return NULL;
+                }
+                result->tm_year = value - 1900;
+                break;
+            case 'H':
+                if (!android_strptime_number(&cursor, 2, 0, 23, &result->tm_hour)) {
+                    return NULL;
+                }
+                break;
+            case 'M':
+                if (!android_strptime_number(&cursor, 2, 0, 59, &result->tm_min)) {
+                    return NULL;
+                }
+                break;
+            case 'S':
+                if (!android_strptime_number(&cursor, 2, 0, 60, &result->tm_sec)) {
+                    return NULL;
+                }
+                break;
+            case '%':
+                if (*cursor != '%') {
+                    return NULL;
+                }
+                ++cursor;
+                break;
+            default:
+                return NULL;
+        }
+        ++spec;
+    }
+    return (char *)cursor;
+}

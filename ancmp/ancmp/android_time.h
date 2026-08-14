@@ -52,7 +52,15 @@ int android_nanosleep(const android_timespec_t *ts, android_timespec_t *rem);
 
 android_time_t android_time(android_time_t *tloc);
 
+char *android_ctime(const android_time_t *timer);
+
+clock_t android_clock(void);
+
 android_tm_t *android_gmtime(const android_time_t *timer);
+
+android_tm_t *android_gmtime_r(
+    const android_time_t *timer,
+    android_tm_t *result);
 
 android_time_t android_mktime(struct tm *timeptr);
 
@@ -74,7 +82,10 @@ android_time_t android_mktime(struct tm *timeptr);
 #define android_gettimeofday gettimeofday
 #define android_nanosleep nanosleep
 #define android_time time
+#define android_ctime ctime
+#define android_clock clock
 #define android_gmtime gmtime
+#define android_gmtime_r gmtime_r
 #define android_mktime mktime
 #endif
 
@@ -88,5 +99,7 @@ typedef struct {
 int android_ftime(android_timeb_t *tp);
 
 int android_usleep(unsigned long usec);
+
+unsigned int android_sleep(unsigned int seconds);
 
 #endif

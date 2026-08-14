@@ -255,6 +255,10 @@ int android_fprintf(custom_file_t *stream, const char *format, ...) {
     return ret;
 }
 
+int android_vfprintf(custom_file_t *stream, const char *format, va_list args) {
+    return vfprintf(get_fp(stream), format, args);
+}
+
 int android_fscanf(custom_file_t *stream, const char *format, ...) {
     va_list args;
     int ret;

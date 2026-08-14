@@ -1,8 +1,171 @@
 #include "android_socket.h"
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include "android_posix_types.h"
 #include "android_fcntl.h"
+#include "android_sprint.h"
+#ifdef _WIN32
+#include <iphlpapi.h>
+#else
+#include <net/if.h>
+#endif
+
+unsigned int android_if_nametoindex(const char *interface_name) {
+#ifdef _WIN32
+    IP_ADAPTER_ADDRESSES *adapters;
+    IP_ADAPTER_ADDRESSES *adapter;
+    ULONG buffer_size = 15000;
+    ULONG result;
+    char *end = NULL;
+    unsigned long numeric_index;
+
+    if (!interface_name || !interface_name[0]) {
+        return 0;
+    }
+    numeric_index = strtoul(interface_name, &end, 10);
+    if (end && *end == '\0' && numeric_index <= UINT_MAX) {
+        return (unsigned int)numeric_index;
+    }
+    adapters = (IP_ADAPTER_ADDRESSES *)malloc(buffer_size);
+    if (!adapters) {
+        return 0;
+    }
+    result = GetAdaptersAddresses(
+        AF_UNSPEC,
+        GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+            GAA_FLAG_SKIP_DNS_SERVER,
+        NULL,
+        adapters,
+        &buffer_size);
+    if (result == ERROR_BUFFER_OVERFLOW) {
+        IP_ADAPTER_ADDRESSES *resized =
+            (IP_ADAPTER_ADDRESSES *)realloc(adapters, buffer_size);
+        if (!resized) {
+            free(adapters);
+            return 0;
+        }
+        adapters = resized;
+        result = GetAdaptersAddresses(
+            AF_UNSPEC,
+            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                GAA_FLAG_SKIP_DNS_SERVER,
+            NULL,
+            adapters,
+            &buffer_size);
+    }
+    if (result != NO_ERROR) {
+        free(adapters);
+        return 0;
+    }
+    for (adapter = adapters; adapter; adapter = adapter->Next) {
+        char friendly_name[512];
+        friendly_name[0] = '\0';
+        if (adapter->FriendlyName) {
+            WideCharToMultiByte(
+                CP_UTF8,
+                0,
+                adapter->FriendlyName,
+                -1,
+                friendly_name,
+                sizeof(friendly_name),
+                NULL,
+                NULL);
+        }
+        if ((adapter->AdapterName &&
+             _stricmp(adapter->AdapterName, interface_name) == 0) ||
+            (friendly_name[0] &&
+             _stricmp(friendly_name, interface_name) == 0)) {
+            unsigned int index = adapter->Ipv6IfIndex
+                                     ? adapter->Ipv6IfIndex
+                                     : adapter->IfIndex;
+            free(adapters);
+            return index;
+        }
+    }
+    free(adapters);
+    return 0;
+#else
+    return if_nametoindex(interface_name);
+#endif
+}
+
+char *android_if_indextoname(unsigned int interface_index, char *interface_name) {
+#ifdef _WIN32
+    IP_ADAPTER_ADDRESSES *adapters;
+    IP_ADAPTER_ADDRESSES *adapter;
+    ULONG buffer_size = 15000;
+    ULONG result;
+    const size_t android_if_namesize = 16;
+
+    if (interface_index == 0 || interface_name == NULL) {
+        return NULL;
+    }
+    adapters = (IP_ADAPTER_ADDRESSES *)malloc(buffer_size);
+    if (!adapters) {
+        return NULL;
+    }
+    result = GetAdaptersAddresses(
+        AF_UNSPEC,
+        GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+            GAA_FLAG_SKIP_DNS_SERVER,
+        NULL,
+        adapters,
+        &buffer_size);
+    if (result == ERROR_BUFFER_OVERFLOW) {
+        IP_ADAPTER_ADDRESSES *resized =
+            (IP_ADAPTER_ADDRESSES *)realloc(adapters, buffer_size);
+        if (!resized) {
+            free(adapters);
+            return NULL;
+        }
+        adapters = resized;
+        result = GetAdaptersAddresses(
+            AF_UNSPEC,
+            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                GAA_FLAG_SKIP_DNS_SERVER,
+            NULL,
+            adapters,
+            &buffer_size);
+    }
+    if (result != NO_ERROR) {
+        free(adapters);
+        return NULL;
+    }
+    for (adapter = adapters; adapter; adapter = adapter->Next) {
+        if (adapter->IfIndex == interface_index ||
+            adapter->Ipv6IfIndex == interface_index) {
+            int converted = 0;
+            if (adapter->FriendlyName) {
+                converted = WideCharToMultiByte(
+                    CP_UTF8,
+                    0,
+                    adapter->FriendlyName,
+                    -1,
+                    interface_name,
+                    (int)android_if_namesize,
+                    NULL,
+                    NULL);
+            }
+            if (converted == 0 && adapter->AdapterName &&
+                strlen(adapter->AdapterName) < android_if_namesize) {
+                strcpy(interface_name, adapter->AdapterName);
+                converted = (int)strlen(interface_name) + 1;
+            }
+            if (converted == 0) {
+                android_snprintf(interface_name, android_if_namesize, "%u", interface_index);
+                interface_name[android_if_namesize - 1] = '\0';
+            }
+            free(adapters);
+            return interface_name;
+        }
+    }
+    free(adapters);
+    return NULL;
+#else
+    return if_indextoname(interface_index, interface_name);
+#endif
+}
 
 int af_to_native(int domain) {
 #ifdef AF_UNSPEC
@@ -1063,12 +1226,169 @@ long android_sendto(int sockfd, const void *buf, size_t len, int flags, const st
     return -1;
 }
 
+long android_recvmsg(int sockfd, android_socket_msghdr_t *message, int flags) {
+#ifdef _WIN32
+    WSABUF *buffers;
+    DWORD received = 0;
+    DWORD native_flags;
+    int result;
+    size_t i;
+
+    if (!message || (message->msg_iovlen > 0 && !message->msg_iov) ||
+        message->msg_iovlen > (size_t)UINT_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (message->msg_iovlen == 0) {
+        return 0;
+    }
+    buffers = (WSABUF *)calloc(message->msg_iovlen, sizeof(WSABUF));
+    if (!buffers) {
+        errno = ENOMEM;
+        return -1;
+    }
+    for (i = 0; i < message->msg_iovlen; ++i) {
+        if (message->msg_iov[i].iov_len > (size_t)ULONG_MAX) {
+            free(buffers);
+            errno = EINVAL;
+            return -1;
+        }
+        buffers[i].buf = (CHAR *)message->msg_iov[i].iov_base;
+        buffers[i].len = (ULONG)message->msg_iov[i].iov_len;
+    }
+    native_flags = (DWORD)msg_to_native(flags);
+    if (message->msg_name) {
+        int name_length = (int)message->msg_namelen;
+        result = WSARecvFrom(
+            (SOCKET)sockfd,
+            buffers,
+            (DWORD)message->msg_iovlen,
+            &received,
+            &native_flags,
+            (struct sockaddr *)message->msg_name,
+            &name_length,
+            NULL,
+            NULL);
+        if (result == 0) {
+            message->msg_namelen = (android_socklen_t)name_length;
+            ((struct sockaddr *)message->msg_name)->sa_family =
+                af_to_android(((struct sockaddr *)message->msg_name)->sa_family);
+        }
+    } else {
+        result = WSARecv(
+            (SOCKET)sockfd,
+            buffers,
+            (DWORD)message->msg_iovlen,
+            &received,
+            &native_flags,
+            NULL,
+            NULL);
+    }
+    free(buffers);
+    if (result == SOCKET_ERROR) {
+        int error = WSAGetLastError();
+        errno = error == WSAEWOULDBLOCK ? EWOULDBLOCK :
+                error == WSAEINPROGRESS ? EINPROGRESS :
+                error == WSAECONNRESET ? ECONNRESET :
+                error == WSAECONNABORTED ? ECONNABORTED :
+                error == WSAETIMEDOUT ? ETIMEDOUT :
+                error == WSAENOTCONN ? ENOTCONN : EIO;
+        return -1;
+    }
+    message->msg_controllen = 0;
+    message->msg_flags = (int)native_flags;
+    return (long)received;
+#else
+    return recvmsg(sockfd, (struct msghdr *)message, flags);
+#endif
+}
+
+long android_sendmsg(int sockfd, const android_socket_msghdr_t *message, int flags) {
+#ifdef _WIN32
+    WSABUF *buffers;
+    DWORD sent = 0;
+    struct sockaddr *native_address = NULL;
+    int result;
+    size_t i;
+
+    if (!message || (message->msg_iovlen > 0 && !message->msg_iov) ||
+        message->msg_iovlen > (size_t)UINT_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (message->msg_iovlen == 0) {
+        return 0;
+    }
+    buffers = (WSABUF *)calloc(message->msg_iovlen, sizeof(WSABUF));
+    if (!buffers) {
+        errno = ENOMEM;
+        return -1;
+    }
+    for (i = 0; i < message->msg_iovlen; ++i) {
+        if (message->msg_iov[i].iov_len > (size_t)ULONG_MAX) {
+            free(buffers);
+            errno = EINVAL;
+            return -1;
+        }
+        buffers[i].buf = (CHAR *)message->msg_iov[i].iov_base;
+        buffers[i].len = (ULONG)message->msg_iov[i].iov_len;
+    }
+    if (message->msg_name && message->msg_namelen > 0) {
+        native_address = (struct sockaddr *)malloc(message->msg_namelen);
+        if (!native_address) {
+            free(buffers);
+            errno = ENOMEM;
+            return -1;
+        }
+        memcpy(native_address, message->msg_name, message->msg_namelen);
+        native_address->sa_family = af_to_native(native_address->sa_family);
+        result = WSASendTo(
+            (SOCKET)sockfd,
+            buffers,
+            (DWORD)message->msg_iovlen,
+            &sent,
+            (DWORD)msg_to_native(flags),
+            native_address,
+            (int)message->msg_namelen,
+            NULL,
+            NULL);
+    } else {
+        result = WSASend(
+            (SOCKET)sockfd,
+            buffers,
+            (DWORD)message->msg_iovlen,
+            &sent,
+            (DWORD)msg_to_native(flags),
+            NULL,
+            NULL);
+    }
+    free(native_address);
+    free(buffers);
+    if (result == SOCKET_ERROR) {
+        int error = WSAGetLastError();
+        errno = error == WSAEWOULDBLOCK ? EWOULDBLOCK :
+                error == WSAEINPROGRESS ? EINPROGRESS :
+                error == WSAECONNRESET ? ECONNRESET :
+                error == WSAECONNABORTED ? ECONNABORTED :
+                error == WSAETIMEDOUT ? ETIMEDOUT :
+                error == WSAENOTCONN ? ENOTCONN : EIO;
+        return -1;
+    }
+    return (long)sent;
+#else
+    return sendmsg(sockfd, (const struct msghdr *)message, flags);
+#endif
+}
+
 int android_listen(int sockfd, int backlog) {
     return listen(sockfd, (backlog == ANDROID_SOMAXCONN) ? SOMAXCONN : 0);
 }
 
 #ifdef _WIN32
 int android_close(int fd) {
+    if (android_random_device_release(fd)) {
+        return _close(fd);
+    }
     if (is_socket(fd)) {
         return closesocket(fd);
     } else {
@@ -1077,6 +1397,9 @@ int android_close(int fd) {
 }
 
 long android_read(int fd, void *buf, size_t count) {
+    if (android_random_device_is_fd(fd)) {
+        return android_random_device_read(fd, buf, count);
+    }
     if (is_socket(fd)) {
         return recv(fd, buf, count, 0);
     } else {

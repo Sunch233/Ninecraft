@@ -9,6 +9,12 @@
 typedef long android_pthread_t;
 typedef volatile int android_pthread_once_t;
 
+typedef struct android_pthread_cleanup_t {
+    struct android_pthread_cleanup_t *previous;
+    void (*routine)(void *);
+    void *argument;
+} android_pthread_cleanup_t;
+
 int android_pthread_equal(android_pthread_t one, android_pthread_t two);
 
 int android_pthread_setname_np(android_pthread_t thread, const char *name);
@@ -22,5 +28,11 @@ int android_pthread_detach(android_pthread_t thid);
 int android_pthread_join(android_pthread_t thid, void **ret_val);
 
 android_pthread_t android_pthread_self(void);
+
+void android_pthread_cleanup_push(android_pthread_cleanup_t *cleanup,
+                                  void (*routine)(void *),
+                                  void *argument);
+
+void android_pthread_cleanup_pop(android_pthread_cleanup_t *cleanup, int execute);
 
 #endif

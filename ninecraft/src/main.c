@@ -1640,6 +1640,9 @@ static void configure_app_platform_0_15_6(app_platform_0_9_0_t *plat) {
 
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_DATA_URL] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getDataUrl);
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PACKAGE_PATH] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getPackagePath);
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_LOAD_PNG] = (void *)AppPlatform_linux$loadTexture_0_15_6;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_LOAD_TGA] = (void *)AppPlatform_linux$loadTexture_0_15_6;
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_LOAD_JPEG] = (void *)AppPlatform_linux$loadTexture_0_15_6;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_SHOW_KEYBOARD] = (void *)AppPlatform_linux$showKeyboard_0_14_3;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_HIDE_KEYBOARD] = (void *)AppPlatform_linux$hideKeyboard_0_14_3;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_HIDE_MOUSE_POINTER] = (void *)grab_mouse;
@@ -1676,6 +1679,68 @@ static void configure_app_platform_0_15_6(app_platform_0_9_0_t *plat) {
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_IS_TABLET] = (void *)AppPlatform_linux$isTablet;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_EDITION] = (void *)GET_SYSV_WRAPPER(AppPlatform_linux$getEdition);
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PLATFORM_TEMP_PATH] = (void *)AppPlatform_linux$getPlatformTempPath;
+}
+
+static const char *ninecraft_egl_query_string(void *display, int name) {
+    (void)display;
+    switch (name) {
+        case 0x3053: /* EGL_VENDOR */
+            return "Ninecraft";
+        case 0x3054: /* EGL_VERSION */
+            return "1.4 Ninecraft";
+        case 0x3055: /* EGL_EXTENSIONS */
+            return "";
+        case 0x308D: /* EGL_CLIENT_APIS */
+            return "OpenGL_ES";
+        default:
+            return NULL;
+    }
+}
+
+static void *ninecraft_egl_get_proc_address(const char *name) {
+    void *result = NULL;
+
+    if (!name) {
+        return NULL;
+    }
+
+    /*
+     * Android x86 calls these pointers with the SysV/cdecl ABI. Returning a
+     * raw WGL/SDL address on 32-bit Windows would expose a stdcall function to
+     * the guest and corrupt its stack, so only return our cdecl wrappers.
+     * This list matches mce::glext::initGLExtension() in MCPE 0.15.6.
+     */
+    if (strcmp(name, "glRenderbufferStorageMultisampleEXT") == 0 ||
+        strcmp(name, "glRenderbufferStorageMultisampleIMG") == 0 ||
+        strcmp(name, "glRenderbufferStorageMultisample") == 0) {
+        if (glad_glRenderbufferStorageMultisample ||
+            glad_glRenderbufferStorageMultisampleEXT) {
+            result = (void *)gl_renderbuffer_storage_multisample;
+        }
+    } else if (strcmp(name, "glFramebufferTexture2DMultisampleEXT") == 0 ||
+               strcmp(name, "glFramebufferTexture2DMultisampleIMG") == 0) {
+        /* No ABI-safe desktop equivalent; NULL disables this optional path. */
+        result = NULL;
+    } else if (strcmp(name, "glBlitFramebuffer") == 0) {
+        if (glad_glBlitFramebuffer || glad_glBlitFramebufferEXT) {
+            result = (void *)gl_blit_framebuffer;
+        }
+    } else if (strcmp(name, "glTexStorage2D") == 0) {
+        if (glad_glTexStorage2D || glad_glTexStorage2DEXT) {
+            result = (void *)gl_tex_storage_2_d;
+        }
+    } else if (strcmp(name, "glTexStorage2DMultisample") == 0) {
+        if (glad_glTexStorage2DMultisample) {
+            result = (void *)gl_tex_storage_2_d_multisample;
+        }
+    } else if (strcmp(name, "glInvalidateFramebuffer") == 0) {
+        result = (void *)gl_invalidate_framebuffer;
+    } else if (strcmp(name, "glDiscardFramebufferEXT") == 0) {
+        result = (void *)gl_discard_framebuffer_ext;
+    }
+
+    fprintf(stderr, "EGL proc: %s -> %p\n", name, result);
+    return result;
 }
 
 void gles_hook() {
@@ -1791,6 +1856,12 @@ void gles_hook() {
     add_custom_hook("glIsTexture", (void *)gl_is_texture);
     add_custom_hook("glGetTexParameteriv", (void *)gl_get_tex_parameter_i_v);
     add_custom_hook("glFramebufferTexture2D", (void *)gl_framebuffer_texture_2_d);
+    add_custom_hook("glRenderbufferStorageMultisample", (void *)gl_renderbuffer_storage_multisample);
+    add_custom_hook("glBlitFramebuffer", (void *)gl_blit_framebuffer);
+    add_custom_hook("glTexStorage2D", (void *)gl_tex_storage_2_d);
+    add_custom_hook("glTexStorage2DMultisample", (void *)gl_tex_storage_2_d_multisample);
+    add_custom_hook("glInvalidateFramebuffer", (void *)gl_invalidate_framebuffer);
+    add_custom_hook("glDiscardFramebufferEXT", (void *)gl_discard_framebuffer_ext);
 }
 
 int __my_srget(FILE *astream) {
@@ -2382,6 +2453,8 @@ int main(int argc, char **argv) {
     add_custom_hook("__android_log_write", (void *)__android_log_write);
     stub_symbols(android_symbols, (void *)android_stub);
     stub_symbols(egl_symbols, (void *)egl_stub);
+    add_custom_hook("eglQueryString", (void *)ninecraft_egl_query_string);
+    add_custom_hook("eglGetProcAddress", (void *)ninecraft_egl_get_proc_address);
 
     add_custom_hook("SL_IID_VOLUME", &sles_iid_volume);
     add_custom_hook("SL_IID_ENGINE", &sles_iid_engine);

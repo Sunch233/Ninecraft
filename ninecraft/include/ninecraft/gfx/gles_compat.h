@@ -241,4 +241,48 @@ extern void gl_get_tex_parameter_i_v(GLenum target, GLenum pname, GLint *params)
 
 extern void gl_framebuffer_texture_2_d(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
 
+extern void gl_renderbuffer_storage_multisample(
+    GLenum target,
+    GLsizei samples,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height);
+
+extern void gl_blit_framebuffer(
+    GLint src_x0,
+    GLint src_y0,
+    GLint src_x1,
+    GLint src_y1,
+    GLint dst_x0,
+    GLint dst_y0,
+    GLint dst_x1,
+    GLint dst_y1,
+    GLbitfield mask,
+    GLenum filter);
+
+extern void gl_tex_storage_2_d(
+    GLenum target,
+    GLsizei levels,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height);
+
+extern void gl_tex_storage_2_d_multisample(
+    GLenum target,
+    GLsizei samples,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height,
+    GLboolean fixed_sample_locations);
+
+extern void gl_invalidate_framebuffer(
+    GLenum target,
+    GLsizei num_attachments,
+    const GLenum *attachments);
+
+extern void gl_discard_framebuffer_ext(
+    GLenum target,
+    GLsizei num_attachments,
+    const GLenum *attachments);
+
 #endif

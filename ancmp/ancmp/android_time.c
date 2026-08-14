@@ -207,23 +207,48 @@ android_time_t android_time(android_time_t *tloc) {
     return (android_time_t)t;
 }
 
+char *android_ctime(const android_time_t *timer) {
+    time_t native_time;
+    if (!timer) {
+        return NULL;
+    }
+    native_time = (time_t)*timer;
+    return ctime(&native_time);
+}
+
+clock_t android_clock(void) {
+    return clock();
+}
+
 android_tm_t *android_gmtime(const android_time_t *timer) {
     static android_tm_t tm;
-    struct tm *real_tm;
-    time_t t = (time_t)*timer;
-    real_tm = gmtime(&t);
-    tm.tm_sec = real_tm->tm_sec;
-    tm.tm_min = real_tm->tm_min;
-    tm.tm_hour = real_tm->tm_hour;
-    tm.tm_mday = real_tm->tm_mday;
-    tm.tm_mon = real_tm->tm_mon;
-    tm.tm_year = real_tm->tm_year;
-    tm.tm_wday = real_tm->tm_wday;
-    tm.tm_yday = real_tm->tm_yday;
-    tm.tm_isdst = real_tm->tm_isdst;
-    tm.tm_gmtoff = 0;
-    tm.tm_zone = "UTC";
-    return &tm;
+    return android_gmtime_r(timer, &tm);
+}
+
+android_tm_t *android_gmtime_r(
+    const android_time_t *timer,
+    android_tm_t *result) {
+    struct tm real_tm;
+    time_t t;
+    if (!timer || !result) {
+        return NULL;
+    }
+    t = (time_t)*timer;
+    if (gmtime_s(&real_tm, &t) != 0) {
+        return NULL;
+    }
+    result->tm_sec = real_tm.tm_sec;
+    result->tm_min = real_tm.tm_min;
+    result->tm_hour = real_tm.tm_hour;
+    result->tm_mday = real_tm.tm_mday;
+    result->tm_mon = real_tm.tm_mon;
+    result->tm_year = real_tm.tm_year;
+    result->tm_wday = real_tm.tm_wday;
+    result->tm_yday = real_tm.tm_yday;
+    result->tm_isdst = real_tm.tm_isdst;
+    result->tm_gmtoff = 0;
+    result->tm_zone = "UTC";
+    return result;
 }
 
 android_time_t android_mktime(struct tm *timeptr) {
@@ -260,4 +285,18 @@ int android_usleep(unsigned long usec) {
     ts.tv_sec = usec / 1000000;
     ts.tv_nsec = (usec % 1000000) * 1000;
     return android_nanosleep(&ts, NULL);
+}
+
+unsigned int android_sleep(unsigned int seconds) {
+    android_timespec_t requested;
+    android_timespec_t remaining;
+    requested.tv_sec = (android_time_t)seconds;
+    requested.tv_nsec = 0;
+    remaining.tv_sec = 0;
+    remaining.tv_nsec = 0;
+    if (android_nanosleep(&requested, &remaining) == 0) {
+        return 0;
+    }
+    return (unsigned int)remaining.tv_sec +
+           (remaining.tv_nsec > 0 ? 1u : 0u);
 }

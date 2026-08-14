@@ -22,6 +22,9 @@
 #include <string.h>
 #include "../string/android_string.h"
 #include "../android_sprint.h"
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#endif
 
 static const char *android_inet_ntop4(const unsigned char *src, char *dst, size_t size) {
 	static const char fmt[] = "%u.%u.%u.%u";
@@ -131,4 +134,44 @@ const char *android_inet_ntop(int af, const void *src, char *dst, size_t size) {
 		return (NULL);
 	}
 	/* NOTREACHED */
+}
+
+int android_inet_pton(int af, const char *src, void *dst) {
+#ifdef _WIN32
+	struct sockaddr_storage address;
+	int address_length = sizeof(address);
+	int native_af;
+	char input[64];
+
+	if (!src || !dst) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (af != ANDROID_AF_INET && af != ANDROID_AF_INET6) {
+		errno = EAFNOSUPPORT;
+		return -1;
+	}
+	if (strlen(src) >= sizeof(input)) {
+		return 0;
+	}
+	strcpy(input, src);
+	native_af = af_to_native(af);
+	memset(&address, 0, sizeof(address));
+	if (WSAStringToAddressA(
+			input,
+			native_af,
+			NULL,
+			(struct sockaddr *)&address,
+			&address_length) != 0) {
+		return 0;
+	}
+	if (af == ANDROID_AF_INET) {
+		memcpy(dst, &((SOCKADDR_IN *)&address)->sin_addr, 4);
+	} else {
+		memcpy(dst, &((SOCKADDR_IN6 *)&address)->sin6_addr, 16);
+	}
+	return 1;
+#else
+	return inet_pton(af_to_native(af), src, dst);
+#endif
 }

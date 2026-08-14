@@ -163,3 +163,19 @@ FLOAT_ABI_FIX float android_exp2f(float x) {
 FLOAT_ABI_FIX double android_exp2(double x) {
     return exp2(x);
 }
+
+FLOAT_ABI_FIX float android_fmaxf(float x, float y) {
+    return fmaxf(x, y);
+}
+
+FLOAT_ABI_FIX float android_nearbyintf(float x) {
+    return nearbyintf(x);
+}
+
+FLOAT_ABI_FIX float android_roundf(float x) {
+    return roundf(x);
+}
+
+FLOAT_ABI_FIX float android_truncf(float x) {
+    return truncf(x);
+}

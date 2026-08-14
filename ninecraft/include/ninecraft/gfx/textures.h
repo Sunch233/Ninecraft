@@ -32,6 +32,16 @@ typedef struct {
     uint32_t unknown2; // 24 0x18
 } texture_data_t;
 
+/* MCPE 0.15.6 TextureData: vector<uint8_t>, width, height, format. */
+typedef struct {
+    uint8_t *data_start;
+    uint8_t *data_finish;
+    uint8_t *data_end;
+    uint32_t width;
+    uint32_t height;
+    uint32_t format;
+} texture_data_0_15_6_t;
+
 typedef struct {
     int width;// 0 0x00
     int height; // 4 0x04

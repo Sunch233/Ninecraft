@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <wchar.h>
 #include <wctype.h>
 #include "ancmp_stdint.h"
@@ -91,6 +92,8 @@ int android_setvbuf(custom_file_t *stream, char *buf, int mode, size_t size);
 int android_getc(custom_file_t *stream);
 
 int android_fprintf(custom_file_t *stream, const char *format, ...);
+
+int android_vfprintf(custom_file_t *stream, const char *format, va_list args);
 
 int android_fscanf(custom_file_t *stream, const char *format, ...);
 

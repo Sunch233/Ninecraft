@@ -235,6 +235,25 @@ int sol_to_native(int level);
 
 int msg_to_native(int flags);
 
+unsigned int android_if_nametoindex(const char *interface_name);
+
+char *android_if_indextoname(unsigned int interface_index, char *interface_name);
+
+typedef struct android_socket_iovec {
+    void *iov_base;
+    size_t iov_len;
+} android_socket_iovec_t;
+
+typedef struct android_socket_msghdr {
+    void *msg_name;
+    android_socklen_t msg_namelen;
+    android_socket_iovec_t *msg_iov;
+    size_t msg_iovlen;
+    void *msg_control;
+    size_t msg_controllen;
+    int msg_flags;
+} android_socket_msghdr_t;
+
 int android_socket(int domain, int type, int protocol);
 
 int android_bind(int sockfd, const struct sockaddr *addr, android_socklen_t addrlen);
@@ -254,6 +273,10 @@ long android_recvfrom(int sockfd, void *buf, size_t len, int flags, struct socka
 long android_send(int sockfd, const void *buf, size_t len, int flags);
 
 long android_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, android_socklen_t addrlen);
+
+long android_recvmsg(int sockfd, android_socket_msghdr_t *message, int flags);
+
+long android_sendmsg(int sockfd, const android_socket_msghdr_t *message, int flags);
 
 int android_listen(int sockfd, int backlog);
 

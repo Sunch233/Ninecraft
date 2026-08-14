@@ -1341,6 +1341,108 @@ void AppPlatform_linux$loadTexture(texture_data_t *ret, AppPlatform_linux *app_p
     *ret = texture_data;
 }
 
+void AppPlatform_linux$loadTexture_0_15_6(
+    AppPlatform_linux *app_platform,
+    texture_data_0_15_6_t *ret,
+    android_string_t *path_str) {
+    static const struct {
+        int use_home;
+        const char *suffix;
+    } candidates[] = {
+        {0, "/overrides/assets/"},
+        {1, "/global_overrides/assets/"},
+        {0, "/assets/"},
+        {0, "/overrides/assets/images/"},
+        {1, "/global_overrides/assets/images/"},
+        {0, "/assets/images/"},
+    };
+    const char *resource;
+    size_t resource_length;
+    size_t game_root_length;
+    size_t home_root_length;
+    size_t root_length;
+    size_t path_capacity;
+    char *path;
+    stbi_uc *pixels = NULL;
+    int width = 0;
+    int height = 0;
+    size_t pixel_bytes;
+    size_t index;
+
+    (void)app_platform;
+    if (!ret || !path_str) {
+        return;
+    }
+
+    resource = android_string_to_str(path_str);
+    resource_length = strlen(resource);
+    game_root_length = strlen(game_parameters.game_path);
+    home_root_length = strlen(game_parameters.home_path);
+    root_length = game_root_length > home_root_length
+                      ? game_root_length
+                      : home_root_length;
+    if (resource_length > SIZE_MAX - sizeof("/global_overrides/assets/images/") ||
+        root_length > SIZE_MAX - resource_length -
+                          sizeof("/global_overrides/assets/images/")) {
+        return;
+    }
+
+    path_capacity = root_length + resource_length +
+                    sizeof("/global_overrides/assets/images/");
+    path = (char *)malloc(path_capacity);
+    if (!path) {
+        return;
+    }
+
+    snprintf(path, path_capacity, "%s", resource);
+    if (access(path, 0) != 0) {
+        path[0] = '\0';
+        for (index = 0; index < sizeof(candidates) / sizeof(candidates[0]);
+             ++index) {
+            const char *root = candidates[index].use_home
+                                   ? game_parameters.home_path
+                                   : game_parameters.game_path;
+            snprintf(
+                path,
+                path_capacity,
+                "%s%s%s",
+                root,
+                candidates[index].suffix,
+                resource);
+            if (access(path, 0) == 0) {
+                break;
+            }
+            path[0] = '\0';
+        }
+    }
+
+    if (path[0] != '\0') {
+        pixels = stbi_load(path, &width, &height, NULL, STBI_rgb_alpha);
+    }
+    if (!pixels || width <= 0 || height <= 0 ||
+        (size_t)width > SIZE_MAX / 4u / (size_t)height) {
+        fprintf(
+            stderr,
+            "Unable to load MCPE image: %s (%s)\n",
+            path[0] ? path : resource,
+            stbi_failure_reason() ? stbi_failure_reason() : "not found");
+        stbi_image_free(pixels);
+        free(path);
+        return;
+    }
+
+    pixel_bytes = (size_t)width * (size_t)height * 4u;
+    free(ret->data_start);
+    ret->data_start = pixels;
+    ret->data_finish = pixels + pixel_bytes;
+    ret->data_end = pixels + pixel_bytes;
+    ret->width = (uint32_t)width;
+    ret->height = (uint32_t)height;
+    ret->format = 28;
+    printf("Loaded MCPE image: %s (%dx%d)\n", path, width, height);
+    free(path);
+}
+
 SYSV_WRAPPER(AppPlatform_linux$loadTextureOld, 4)
 void AppPlatform_linux$loadTextureOld(texture_data_old_t *ret, AppPlatform_linux *app_platform, android_string_t *path_str, bool alpha) {
     //puts("debug: AppPlatform_linux::loadTexture");

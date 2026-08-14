@@ -33,7 +33,19 @@ typedef struct {
 } android_flock_t;
 
 #ifdef _WIN32
+#include <stddef.h>
+
 int is_socket(int fd);
+
+int android_random_device_is_path(const char *pathname);
+
+int android_random_device_open(void);
+
+int android_random_device_is_fd(int fd);
+
+long android_random_device_read(int fd, void *buffer, size_t count);
+
+int android_random_device_release(int fd);
 
 int android_fcntl(int fd, int op, ...);
 

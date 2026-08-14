@@ -1,13 +1,155 @@
 #include "android_fcntl.h"
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
+#include <wincrypt.h>
 #include <io.h>
 #include <fcntl.h>
 #include "android_stat.h"
 #include <sys/stat.h>
+
+#define ANDROID_RANDOM_DEVICE_MAX_FDS 8
+
+typedef struct {
+    int fd;
+    HCRYPTPROV provider;
+} android_random_device_t;
+
+static android_random_device_t
+    android_random_devices[ANDROID_RANDOM_DEVICE_MAX_FDS];
+static CRITICAL_SECTION android_random_device_lock;
+static volatile LONG android_random_device_lock_state;
+
+static void android_random_device_initialize(void) {
+    if (InterlockedCompareExchange(&android_random_device_lock_state, 1, 0) == 0) {
+        int index;
+        InitializeCriticalSection(&android_random_device_lock);
+        for (index = 0; index < ANDROID_RANDOM_DEVICE_MAX_FDS; ++index) {
+            android_random_devices[index].fd = -1;
+        }
+        InterlockedExchange(&android_random_device_lock_state, 2);
+        return;
+    }
+    while (InterlockedCompareExchange(&android_random_device_lock_state, 2, 2) != 2) {
+        Sleep(0);
+    }
+}
+
+int android_random_device_is_path(const char *pathname) {
+    return pathname != NULL &&
+           (strcmp(pathname, "/dev/urandom") == 0 ||
+            strcmp(pathname, "/dev/random") == 0 ||
+            strcmp(pathname, "/dev/srandom") == 0);
+}
+
+int android_random_device_open(void) {
+    HCRYPTPROV provider = 0;
+    int fd;
+    int index;
+
+    if (!CryptAcquireContextA(
+            &provider,
+            NULL,
+            NULL,
+            PROV_RSA_FULL,
+            CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
+        errno = EIO;
+        return -1;
+    }
+    fd = _open("NUL", _O_RDONLY | _O_BINARY);
+    if (fd < 0) {
+        CryptReleaseContext(provider, 0);
+        return -1;
+    }
+
+    android_random_device_initialize();
+    EnterCriticalSection(&android_random_device_lock);
+    for (index = 0; index < ANDROID_RANDOM_DEVICE_MAX_FDS; ++index) {
+        if (android_random_devices[index].fd < 0) {
+            android_random_devices[index].fd = fd;
+            android_random_devices[index].provider = provider;
+            LeaveCriticalSection(&android_random_device_lock);
+            return fd;
+        }
+    }
+    LeaveCriticalSection(&android_random_device_lock);
+    _close(fd);
+    CryptReleaseContext(provider, 0);
+    errno = EMFILE;
+    return -1;
+}
+
+int android_random_device_is_fd(int fd) {
+    int index;
+    int found = 0;
+
+    android_random_device_initialize();
+    EnterCriticalSection(&android_random_device_lock);
+    for (index = 0; index < ANDROID_RANDOM_DEVICE_MAX_FDS; ++index) {
+        if (android_random_devices[index].fd == fd) {
+            found = 1;
+            break;
+        }
+    }
+    LeaveCriticalSection(&android_random_device_lock);
+    return found;
+}
+
+long android_random_device_read(int fd, void *buffer, size_t count) {
+    int index;
+    long result = -1;
+
+    if (buffer == NULL || count > (size_t)0xffffffffUL) {
+        errno = EINVAL;
+        return -1;
+    }
+    android_random_device_initialize();
+    EnterCriticalSection(&android_random_device_lock);
+    for (index = 0; index < ANDROID_RANDOM_DEVICE_MAX_FDS; ++index) {
+        if (android_random_devices[index].fd == fd) {
+            if (CryptGenRandom(
+                    android_random_devices[index].provider,
+                    (DWORD)count,
+                    (BYTE *)buffer)) {
+                result = (long)count;
+            } else {
+                errno = EIO;
+            }
+            break;
+        }
+    }
+    LeaveCriticalSection(&android_random_device_lock);
+    if (index == ANDROID_RANDOM_DEVICE_MAX_FDS) {
+        errno = EBADF;
+    }
+    return result;
+}
+
+int android_random_device_release(int fd) {
+    int index;
+    HCRYPTPROV provider = 0;
+
+    android_random_device_initialize();
+    EnterCriticalSection(&android_random_device_lock);
+    for (index = 0; index < ANDROID_RANDOM_DEVICE_MAX_FDS; ++index) {
+        if (android_random_devices[index].fd == fd) {
+            provider = android_random_devices[index].provider;
+            android_random_devices[index].fd = -1;
+            android_random_devices[index].provider = 0;
+            break;
+        }
+    }
+    LeaveCriticalSection(&android_random_device_lock);
+    if (provider != 0) {
+        CryptReleaseContext(provider, 0);
+        return 1;
+    }
+    return 0;
+}
 
 int is_socket(int fd) {
     int protocol_info;
@@ -148,6 +290,14 @@ int android_open(const char *pathname, int flags, ...) {
     va_list args;
     int fd;
     int real_flags = _O_BINARY;
+
+    if (android_random_device_is_path(pathname)) {
+        if ((flags & ANDROID_O_ACCMODE) != ANDROID_O_RDONLY) {
+            errno = EACCES;
+            return -1;
+        }
+        return android_random_device_open();
+    }
 
     if ((attr != -1 && (attr & FILE_ATTRIBUTE_DIRECTORY))) {
         HANDLE dir = CreateFile(pathname, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);

@@ -326,3 +326,38 @@ android_pthread_t android_pthread_self(void) {
     return *(android_pthread_t *)&thid;
 #endif
 }
+
+void android_pthread_cleanup_push(android_pthread_cleanup_t *cleanup,
+                                  void (*routine)(void *),
+                                  void *argument) {
+    if (cleanup == NULL) {
+        return;
+    }
+
+    /* Bionic's x86 cleanup record is three pointers.  Ninecraft does not
+     * emulate asynchronous pthread cancellation, but preserving the record
+     * lets the matching pop execute the registered cleanup routine exactly as
+     * the guest expects. */
+    cleanup->previous = NULL;
+    cleanup->routine = routine;
+    cleanup->argument = argument;
+}
+
+void android_pthread_cleanup_pop(android_pthread_cleanup_t *cleanup, int execute) {
+    void (*routine)(void *);
+    void *argument;
+
+    if (cleanup == NULL) {
+        return;
+    }
+
+    routine = cleanup->routine;
+    argument = cleanup->argument;
+    cleanup->previous = NULL;
+    cleanup->routine = NULL;
+    cleanup->argument = NULL;
+
+    if (execute && routine != NULL) {
+        routine(argument);
+    }
+}
