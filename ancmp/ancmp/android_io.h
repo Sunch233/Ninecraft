@@ -16,6 +16,11 @@ typedef struct {
 	int	_size;
 } android_sbuf_t;
 
+/* Bionic stdio flags that Android code may inspect directly through FILE.
+ * Keep these values in sync with the legacy 32-bit Bionic ABI. */
+#define ANDROID_FILE_FLAG_EOF   0x0020
+#define ANDROID_FILE_FLAG_ERROR 0x0040
+
 typedef	struct {
 	unsigned char *_p;	/* current position in (some) buffer */
 	int	_r;		/* read space left for getc() */

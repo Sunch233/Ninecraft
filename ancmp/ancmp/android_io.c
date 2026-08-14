@@ -46,6 +46,20 @@ static FILE *get_fp(custom_file_t *stream) {
     return stream->file;
 }
 
+static void sync_android_file_status(custom_file_t *stream, FILE *file) {
+    if (stream == NULL || file == NULL) {
+        return;
+    }
+
+    stream->afile._flags &= (short)~(ANDROID_FILE_FLAG_EOF | ANDROID_FILE_FLAG_ERROR);
+    if (feof(file)) {
+        stream->afile._flags |= ANDROID_FILE_FLAG_EOF;
+    }
+    if (ferror(file)) {
+        stream->afile._flags |= ANDROID_FILE_FLAG_ERROR;
+    }
+}
+
 custom_file_t *android_fopen(const char *filename, const char *mode) {
     char *real_mode = (char *)mode;
     FILE *file;
@@ -199,11 +213,24 @@ size_t android_fread(void *ptr, size_t size, size_t nmemb, custom_file_t *stream
         return nmemb;
     }
 #endif
-    return fread(ptr, size, nmemb, get_fp(stream));
+    {
+        FILE *file = get_fp(stream);
+        size_t result = fread(ptr, size, nmemb, file);
+
+        /* Some Android libraries (including MCPE 0.15.6's LevelDB) inspect
+         * Bionic FILE::_flags directly after fread instead of calling feof.
+         * Mirror the native CRT indicators into the ABI-compatible prefix. */
+        sync_android_file_status(stream, file);
+        return result;
+    }
 }
 
 size_t android_fwrite(const void *ptr, size_t size, size_t nmemb, custom_file_t *stream) {
-    return fwrite(ptr, size, nmemb, get_fp(stream));
+    FILE *file = get_fp(stream);
+    size_t result = fwrite(ptr, size, nmemb, file);
+
+    sync_android_file_status(stream, file);
+    return result;
 }
 
 long android_ftell(custom_file_t *stream) {
@@ -219,12 +246,21 @@ int android_fgetpos(custom_file_t *stream, android_fpos_t *pos) {
 
 int android_fsetpos(custom_file_t *stream, const android_fpos_t *pos) {
     fpos_t tmp;
+    int result;
+    FILE *file = get_fp(stream);
+
     memcpy(&tmp, pos, (sizeof(fpos_t) > sizeof(android_fpos_t)) ? sizeof(android_fpos_t) : sizeof(fpos_t));
-    return fsetpos(get_fp(stream), &tmp);
+    result = fsetpos(file, &tmp);
+    sync_android_file_status(stream, file);
+    return result;
 }
 
 int android_fseek(custom_file_t *stream, long offset, int whence) {
-    return fseek(get_fp(stream), offset, whence);
+    FILE *file = get_fp(stream);
+    int result = fseek(file, offset, whence);
+
+    sync_android_file_status(stream, file);
+    return result;
 }
 
 int android_fflush(custom_file_t *stream) {
@@ -295,7 +331,12 @@ int android_ferror(custom_file_t *stream) {
         return 0;
     }
 #endif
-    return ferror(get_fp(stream));
+    {
+        FILE *file = get_fp(stream);
+        int result = ferror(file);
+        sync_android_file_status(stream, file);
+        return result;
+    }
 }
 
 int android_feof(custom_file_t *stream) {
@@ -304,5 +345,10 @@ int android_feof(custom_file_t *stream) {
         return 0;
     }
 #endif
-    return feof(get_fp(stream));
+    {
+        FILE *file = get_fp(stream);
+        int result = feof(file);
+        sync_android_file_status(stream, file);
+        return result;
+    }
 }

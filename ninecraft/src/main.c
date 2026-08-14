@@ -1657,6 +1657,10 @@ static void configure_app_platform_0_15_6(app_platform_0_9_0_t *plat) {
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_EXTERNAL_STORAGE_PATH] = (void *)AppPlatform_linux$getExternalStoragePath;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_INTERNAL_STORAGE_PATH] = (void *)AppPlatform_linux$getInternalStoragePath;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_USERDATA_PATH] = (void *)AppPlatform_linux$getUserdataPath;
+    /* Android normally initializes both userdata accessors from its Activity.
+     * MinecraftClient uses this 0.15-only slot while constructing the
+     * minecraftWorlds/ root, before App::init has a chance to repair it. */
+    platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_USERDATA_PATH_FOR_LEVELS] = (void *)AppPlatform_linux$getUserdataPath;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_SCREEN_WIDTH] = (void *)AppPlatform_linux$getScreenWidth;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_SCREEN_HEIGHT] = (void *)AppPlatform_linux$getScreenHeight;
     platform_vtable_0_15_6.slots[APP_PLATFORM_0_15_6_GET_PIXELS_PER_MILLIMETER] = (void *)AppPlatform_linux$getPixelsPerMillimeter;
