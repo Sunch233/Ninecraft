@@ -20,13 +20,19 @@ if not exist "%GAME_ROOT%\lib\x86\libgnustl_shared.so" goto :missing_game_data
 if not exist "%GAME_ROOT%\lib\x86\libfmod.so" goto :missing_game_data
 
 if exist "build-msvc-win32\CMakeCache.txt" (
-    cmake --build build-msvc-win32 --config Release --target ninecraft --parallel
-    if errorlevel 1 exit /b 1
-) else (
-    call compile-msvc.bat Release
-    if errorlevel 1 exit /b 1
+    goto :rebuild
 )
+call compile-msvc.bat Release
+if errorlevel 1 exit /b 1
+goto :launch
 
+:rebuild
+call "%~dp0scripts\configure-msvc.bat" . build-msvc-win32
+if errorlevel 1 exit /b 1
+"%NINECRAFT_CMAKE%" --build build-msvc-win32 --config Release --target ninecraft --parallel
+if errorlevel 1 exit /b 1
+
+:launch
 if not exist "%USER_DATA_ROOT%\" mkdir "%USER_DATA_ROOT%"
 if errorlevel 1 exit /b %errorlevel%
 

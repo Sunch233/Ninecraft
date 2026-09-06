@@ -4,7 +4,11 @@
 
 ## Installing compile dependencies
 ### Microsoft Windows:
-To compile Ninecraft on Windows, you'll need either MinGW32, LLVM-MinGW, or the Visual Studio 2022 Build Tools. CMake, Python and Git are also required.
+To compile Ninecraft on Windows, you'll need either MinGW32, LLVM-MinGW, or Visual Studio 2019, 2022, or 2026 (the IDE or Build Tools). For Visual Studio, install the **Desktop development with C++** workload, including x86/x64 tools and a Windows SDK. CMake, Python and Git are also required.
+The minimum CMake versions for these Visual Studio generators are 3.14 (2019),
+3.21 (2022), and 4.2 (2026). The MSVC scripts check CMake on `PATH`, then
+fall back to the selected Visual Studio's bundled CMake when needed. Install
+**C++ CMake tools for Windows** in Visual Studio Installer to enable that fallback.
 After python is installed you must run `pip install jinja2`
 
 The Windows XP build additionally requires the Visual Studio Installer
@@ -79,7 +83,7 @@ git clone --recursive https://github.com/MCPI-Revival/Ninecraft.git
 cd Ninecraft
 .\compile.bat
 ```
-### Visual Studio 2022 build tools
+### Visual Studio 2019 / 2022 / 2026 build tools
 ```
 git clone --recursive https://github.com/MCPI-Revival/Ninecraft.git
 cd Ninecraft
@@ -89,6 +93,29 @@ cd Ninecraft
 The MSVC script builds the `Release` configuration by default. Pass another
 configuration explicitly when needed, for example `compile-msvc.bat Debug`.
 It also initializes missing Git submodules automatically.
+The MSVC build scripts use only batch files and do not require PowerShell.
+
+For a new build directory, the script automatically selects the newest installed
+Visual Studio with x86/x64 C++ tools and a compatible CMake, checking `PATH`
+first and then that Visual Studio's bundled CMake. Configuration and compilation
+use the same CMake executable; no global `PATH` changes are needed.
+An existing build directory retains its cached Visual Studio generator while
+that Visual Studio is still installed. In automatic mode, if it is no longer
+installed, the script removes `CMakeCache.txt` and `CMakeFiles` from the build
+directory and reconfigures it in place. No backup directories are created.
+Use the second argument to select a version explicitly:
+
+```bat
+compile-msvc.bat Release 2019
+compile-msvc.bat Release 2022
+compile-msvc.bat Release 2026
+```
+
+Before explicitly switching versions, remove `CMakeCache.txt` and `CMakeFiles`
+from the existing `build-msvc-win32` directory;
+CMake cannot reuse one build directory across different generators.
+`ancmp\compile-msvc.bat` accepts the same arguments (its default configuration
+is `Debug`, and its build directory is `ancmp\build-win32`).
 
 Windows MSVC builds statically link the bundled libraries and the MSVC/UCRT
 runtime. The resulting `ninecraft.exe` does not require VC Redistributable,
@@ -104,6 +131,12 @@ This uses a separate `build-msvc-v141xp` directory, targets 32-bit Windows XP
 SP3, and keeps the static runtime configuration. The resulting executable is
 `build-msvc-v141xp\ninecraft\Release\ninecraft.exe`. A graphics driver with
 OpenGL 2.0 support is still required.
+
+The XP script accepts the same optional configuration and Visual Studio version,
+for example `compile-msvc-xp.bat Release 2019`. The selected installation must
+also support the separately installed `v141_xp` toolset; selecting a newer IDE
+does not provide XP support by itself. Remove `CMakeCache.txt` and `CMakeFiles`
+from `build-msvc-v141xp` before explicitly switching its Visual Studio version.
 
 To verify that the compiled launcher can start without requiring game data:
 ```
@@ -221,7 +254,7 @@ ninecraft-extract
 ```
 .\build-mingw32\ninecraft\ninecraft.exe
 ```
-### Visual Studio 2022 build tools (Microsoft Windows)
+### Visual Studio 2019 / 2022 / 2026 build tools (Microsoft Windows)
 ```
 .\run-msvc.bat "C:\path\to\extracted-mcpe-0.14.3-x86"
 ```

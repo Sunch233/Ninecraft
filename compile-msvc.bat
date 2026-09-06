@@ -11,10 +11,10 @@ if errorlevel 1 exit /b %errorlevel%
 git submodule update --init --recursive
 if errorlevel 1 exit /b %errorlevel%
 
-cmake -S . -B build-msvc-win32 -G "Visual Studio 17 2022" -A Win32
+call "%~dp0scripts\configure-msvc.bat" . build-msvc-win32 "%~2"
 if errorlevel 1 exit /b %errorlevel%
 
-cmake --build build-msvc-win32 --config "%BUILD_CONFIG%" --parallel
+"%NINECRAFT_CMAKE%" --build build-msvc-win32 --config "%BUILD_CONFIG%" --parallel
 if errorlevel 1 exit /b %errorlevel%
 
 echo Built build-msvc-win32\ninecraft\%BUILD_CONFIG%\ninecraft.exe
